@@ -1,0 +1,14 @@
+*.task
+*.tflite
+*.onnx
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.ckpt
+*.pb
+*.h5
+*.keras
+!README.md
+!.gitignore
+!.gitkeep

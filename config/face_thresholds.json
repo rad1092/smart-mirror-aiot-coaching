@@ -1,0 +1,25 @@
+{
+  "brightness_diff_threshold": 0.10,
+  "redness_diff_threshold": 0.08,
+  "beard_shadow_diff_threshold": 0.10,
+  "illuminance_low_threshold": 250,
+  "illuminance_high_threshold": 700,
+  "fallback_face_region": {
+    "x_min_ratio": 0.30,
+    "x_max_ratio": 0.70,
+    "y_min_ratio": 0.15,
+    "y_max_ratio": 0.55
+  },
+  "fallback_beard_region": {
+    "x_min_ratio": 0.35,
+    "x_max_ratio": 0.65,
+    "y_min_ratio": 0.45,
+    "y_max_ratio": 0.65
+  },
+  "beard_shadow_dark_threshold": 0.35,
+  "fallback_feature": {
+    "brightness": 0.5,
+    "redness": 0.33,
+    "beard_shadow": 0.0
+  }
+}

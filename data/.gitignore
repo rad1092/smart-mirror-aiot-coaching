@@ -1,0 +1,9 @@
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+!baseline_default.json
+!color_rules.json
+!exercise_rules.json
+!.gitignore

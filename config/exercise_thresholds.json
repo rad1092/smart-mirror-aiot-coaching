@@ -1,0 +1,26 @@
+{
+  "squat": {
+    "down_knee_angle": 95,
+    "up_knee_angle": 160,
+    "min_landmark_visibility": 0.5,
+    "min_landmark_confidence": 0.5,
+    "stability_warning_threshold": 0.65,
+    "knees_caving_in": 0.12,
+    "posture_error_thresholds": {
+      "knees_caving_in": 0.12,
+      "back_leaning_forward_degrees": 25
+    }
+  },
+  "pushup": {
+    "enabled": false,
+    "down_elbow_angle": 90,
+    "up_elbow_angle": 155,
+    "min_landmark_visibility": 0.5
+  },
+  "plank": {
+    "enabled": false,
+    "min_hold_seconds": 20,
+    "hip_drop_threshold": 0.12,
+    "hip_rise_threshold": 0.12
+  }
+}

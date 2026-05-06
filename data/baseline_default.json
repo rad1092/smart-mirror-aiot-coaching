@@ -1,0 +1,32 @@
+{
+  "user_id": "default",
+  "exercise": {
+    "squat": {
+      "avg_count": 15,
+      "avg_stability_score": 0.82,
+      "common_errors": ["knees_caving_in"]
+    },
+    "pushup": {
+      "avg_count": 10,
+      "avg_stability_score": 0.76,
+      "common_errors": ["partial_range"]
+    },
+    "plank": {
+      "avg_hold_seconds": 45,
+      "avg_stability_score": 0.79,
+      "common_errors": ["hip_too_low"]
+    }
+  },
+  "face": {
+    "brightness": 0.74,
+    "redness": 0.13,
+    "beard_shadow": 0.28
+  },
+  "outfit": {
+    "preferred_tones": ["navy", "gray", "black"],
+    "preferred_colors": ["navy", "gray", "white", "beige"]
+  },
+  "environment": {
+    "baseline_illuminance": 360
+  }
+}
