@@ -1,37 +1,37 @@
-# Smart Mirror AIoT Coaching System
+# 스마트미러형 자기관리 AIoT 코칭 시스템
 
-This repository is the shared project repository for the smart mirror AIoT coaching system.
+이 저장소는 스마트미러형 자기관리 AIoT 코칭 시스템의 공용 프로젝트 저장소입니다.
 
-The system is split into three PC roles:
+현재 커밋된 실제 구현 범위는 `PC3 Vision Gateway`입니다. PC1 스마트미러 프론트 앱과 PC2 로컬 LLM Coach API 서버는 아직 이 저장소에 구현되어 있지 않지만, PC1/PC2 담당자가 이 저장소의 API 계약과 문서를 기준으로 각자 기능을 붙일 수 있도록 정리되어 있습니다.
 
-- `PC1`: smart mirror frontend app, planned as Tauri + React + TypeScript.
-- `PC2`: local Coach API server, planned as vLLM + RAG + wrapper endpoint.
-- `PC3`: vision and sensor gateway, implemented here with Python + FastAPI.
+## 시스템 역할
 
-The current committed implementation is the PC3 Vision Gateway. PC1 and PC2 teams can use this repository as the integration contract and add their own components in separate folders or branches when their work starts.
+| 구분 | 역할 | 현재 상태 |
+| --- | --- | --- |
+| PC1 | 스마트미러 프론트 앱. Tauri + React + TypeScript 예정 | 외부 시스템. 아직 구현하지 않음 |
+| PC2 | 로컬 LLM Coach API. vLLM + RAG + wrapper API 예정 | 외부 시스템. 아직 구현하지 않음 |
+| PC3 | 비전/센서 게이트웨이. FastAPI + OpenCV + MediaPipe | 이 저장소에 구현됨 |
 
-PC3 Vision Gateway sits between the PC1 smart mirror frontend and the PC2 local Coach API.
+PC3는 PC1과 PC2 사이의 중앙 오케스트레이터입니다. 이미지와 센서값을 직접 받아 Pose/Face/Outfit/Sensor feature를 만들고, baseline과 비교한 뒤, 필요한 이벤트에서만 PC2를 호출합니다.
 
-PC3 extracts numeric and symbolic features from images and sensors, compares them with baseline values, decides whether coaching is needed, and calls PC2 only with `FeaturePayload` JSON. PC3 never sends raw images, base64 images, frame paths, saved frames, videos, or camera streams to the LLM.
+PC2에는 원본 이미지, base64 이미지, 프레임 경로, 영상, 전체 landmark, segmentation mask를 보내지 않습니다. PC2에는 항상 `FeaturePayload` JSON만 보냅니다.
 
-PC1 and PC2 are external systems in the current codebase. This version does not implement the PC1 Tauri app or the PC2 vLLM/RAG server.
+## 현재 저장소 구조
 
-## Repository Status
-
-Current layout is PC3-first:
+현재는 PC3 우선 구조입니다.
 
 ```text
 .
-├─ app/                 # PC3 FastAPI application
-├─ config/              # PC3 threshold configs
-├─ data/                # PC3 baseline defaults and feature rules
-├─ docs/                # PC2 prompt contract and future PC2 knowledge examples
-├─ models/              # local-only PC3 runtime model placement
-├─ scripts/             # PC3 validation scripts
-└─ tests/               # PC3 backend tests
+├─ app/                 # PC3 FastAPI 애플리케이션
+├─ config/              # 운동/얼굴/옷 분석 threshold 설정
+├─ data/                # 기본 baseline, color rules, exercise rules
+├─ docs/                # PC1/PC2 연결 가이드와 PC2 계약 문서
+├─ models/              # 로컬 실행용 비전 모델 배치 위치
+├─ scripts/             # 모델 경로 확인, smoke test
+└─ tests/               # PC3 backend 테스트
 ```
 
-If the project moves to a full monorepo later, keep the ownership boundary explicit:
+나중에 PC1/PC2 코드까지 한 저장소에 합치면 아래처럼 monorepo 구조로 재정리하는 것을 권장합니다.
 
 ```text
 smart-mirror-aiot-coaching/
@@ -40,75 +40,91 @@ smart-mirror-aiot-coaching/
 └─ pc3-vision-gateway/
 ```
 
-Until then, PC1 and PC2 should treat this repo as the authoritative PC3 API and JSON contract.
+그 전까지는 PC1/PC2 담당자가 이 저장소를 PC3 API/JSON 계약의 기준 문서로 사용하면 됩니다.
 
-## MVP Scope
+## MVP 범위
 
-This MVP supports four API modes:
+PC3는 4개 모드 API를 제공합니다.
 
-- `exercise`: squat counting and posture feedback with realtime WebSocket updates.
-- `grooming`: face feature extraction for `brightness`, `redness`, and `beard_shadow`.
-- `outfit`: top/bottom representative color, contrast, and tone feature extraction.
-- `outing`: combined face, outfit, environment, and purpose payload for final outing checks.
+| mode | 설명 | 구현 수준 |
+| --- | --- | --- |
+| `exercise` | 스쿼트 카운트, 자세 상태, WebSocket 실시간 feedback | 실제 동작 가능 MVP |
+| `grooming` | 얼굴 영역 brightness/redness/beard_shadow 수치 feature 추출 | 단순 region 기반 MVP |
+| `outfit` | 상의/하의 대표색, 대비, tone feature 추출 | 단순 region 기반 MVP |
+| `outing` | face + outfit + environment + purpose 통합 분석 | 단발 분석 MVP |
 
-The analysis is intentionally simple. Face analysis is not diagnosis and must not be treated as skin, disease, fatigue, or health assessment. PC3 does not definitively classify outfit style; it extracts color and tone features only.
+얼굴 분석은 의학적 진단이 아닙니다. 피부 질환, 염증, 피로, 건강 상태를 추정하지 않습니다. 옷 분석도 스타일을 확정 분류하지 않고 색상과 tone feature만 만듭니다.
 
-## Runtime Assets
+## PC1 연결 문서
 
-PC3 does not include training datasets for face, exercise, or fashion tasks. PC3 needs only runtime assets and small configuration files:
+PC1 담당자는 먼저 [docs/pc1_integration_guide.md](docs/pc1_integration_guide.md)를 보면 됩니다.
 
-- Local vision model files under `models/` when using MediaPipe Tasks.
-- `data/baseline_default.json` for default baseline feature values.
-- `data/baselines.sqlite3` for user-specific baseline values created during onboarding.
-- `config/*_thresholds.json` for analyzer thresholds.
-- `data/color_rules.json` for RGB anchor to color-name mapping.
-- `data/exercise_rules.json` for exercise landmarks and future posture rules.
+핵심 흐름은 다음과 같습니다.
 
-Model files are local runtime assets and must not be committed to Git. `models/.gitignore` blocks common model and weight formats such as `.task`, `.tflite`, `.onnx`, `.pt`, `.pth`, `.bin`, and `.safetensors`.
+1. `POST /api/sessions/start`로 session 생성
+2. 응답의 `ws_url`로 WebSocket 연결
+3. 운동 모드에서는 `/api/analyze/exercise`로 frame 업로드
+4. WebSocket으로 `count`, `state`, `feedback` 수신
+5. 운동 종료 시 `POST /api/sessions/{session_id}/stop`
+6. 최종 `coaching` JSON을 PC1 카드에 표시
 
-If model files are missing, PC3 still runs in fallback/mock mode.
+grooming/outfit/outing은 WebSocket이 아니라 REST 응답으로 최종 feature와 coaching을 받습니다.
 
-The current real MediaPipe runtime target is Pose Landmarker Lite only:
+## PC2 연결 문서
+
+PC2 담당자는 먼저 [docs/pc2_integration_guide.md](docs/pc2_integration_guide.md)와 [docs/pc2_prompt_contract.md](docs/pc2_prompt_contract.md)를 보면 됩니다.
+
+PC3가 호출하는 PC2 endpoint 기본값은 다음입니다.
 
 ```text
-models/pose/pose_landmarker_lite.task
+POST http://localhost:8100/api/coach/generate
 ```
 
-Face Landmarker and segmentation model integration are later stages. This version keeps grooming and outfit analysis on safe region-based feature extraction.
+PC2는 `FeaturePayload` JSON을 입력으로 받고 `CoachingResponse` JSON만 반환해야 합니다.
 
-## PC3 vs PC2 Knowledge Boundary
+PC3의 mock mode가 켜져 있으면 PC2가 없어도 PC3는 mode별 mock coaching을 반환합니다.
 
-PC3 owns:
+```env
+MOCK_LLM=true
+```
 
-- MediaPipe runtime model paths
-- default baseline feature JSON and user-specific baseline records
-- threshold config
-- RGB to color-name mapping
-- outfit feature extraction regions
-- exercise posture rule IDs and thresholds
-- face feature thresholds
-- test and validation scripts
+실제 PC2와 연결하려면 다음처럼 설정합니다.
 
-PC2 owns:
+```env
+MOCK_LLM=false
+PC2_COACH_API_URL=http://<PC2_HOST>:8100/api/coach/generate
+```
 
-- color-combination rules
-- purpose-specific outfit rules
-- outfit style taxonomy
-- exercise routine knowledge
-- posture-error correction sentences
-- grooming advice sentences
-- weather and purpose-specific self-management knowledge
+## 실행 방법
 
-The files under `docs/*_knowledge_example.md` are examples for a future PC2 RAG/knowledge_base. PC3 does not use them at runtime.
-
-## Run
+Python 3.10+ 기준입니다.
 
 ```bash
 pip install -r requirements.txt
 uvicorn app.main:app --host 127.0.0.1 --port 9000 --reload
 ```
 
-Environment variables:
+기본 host는 `127.0.0.1`입니다. 같은 컴퓨터에서 PC1/PC3를 개발할 때 권장됩니다.
+
+PC1이 다른 PC에서 PC3에 붙어야 할 때만 LAN IP로 열어야 합니다.
+
+```env
+HOST=0.0.0.0
+WS_PUBLIC_HOST=<PC3_LAN_IP>
+```
+
+이 경우 PC1은 다음 주소를 사용합니다.
+
+```text
+REST: http://<PC3_LAN_IP>:9000
+WS:   ws://<PC3_LAN_IP>:9000/ws/sessions/{session_id}
+```
+
+이 MVP 서버를 인터넷 포트포워딩으로 노출하지 마세요. 같은 LAN 안에서만 사용하고, OS 방화벽으로 접근 범위를 제한하는 것이 안전합니다.
+
+## 환경 변수
+
+`.env.example`을 복사해서 `.env`로 사용합니다.
 
 ```env
 PC2_COACH_API_URL=http://localhost:8100/api/coach/generate
@@ -130,64 +146,23 @@ EXERCISE_RULES_PATH=./data/exercise_rules.json
 BASELINE_DB_PATH=./data/baselines.sqlite3
 ```
 
-The default host is `127.0.0.1`, so PC3 only accepts connections from the same computer. This is the recommended development and single-machine smart mirror setting.
-
-Use `0.0.0.0` only when PC1 runs on another machine in the same LAN:
-
-```env
-HOST=0.0.0.0
-WS_PUBLIC_HOST=<PC3_LAN_IP>
-```
-
-In that mode, PC1 should call `http://<PC3_LAN_IP>:9000` and connect to `ws://<PC3_LAN_IP>:9000/ws/sessions/{session_id}`. Do not expose this MVP server through internet port forwarding; restrict access with the OS firewall or local network rules.
-
-For a future PC1 Tauri/React development app, PC3 allows these origins by default:
+PC1 개발 origin 기본 허용값은 다음입니다.
 
 - `http://localhost:1420`
 - `http://127.0.0.1:1420`
 - `tauri://localhost`
 
-Adjust `CORS_ALLOW_ORIGINS` if the PC1 development origin changes. Do not use `*` for this MVP server.
+`CORS_ALLOW_ORIGINS=*`로 열지 마세요.
 
-## Model Path Check
-
-```bash
-python scripts/check_model_paths.py
-```
-
-This script reports whether local pose, face, and segmentation model files exist. Missing files do not fail the script because fallback mode is valid for the MVP.
-
-To enable the real Pose Landmarker Lite runtime:
-
-1. Download the official MediaPipe Pose Landmarker Lite task file locally.
-2. Put it at `models/pose/pose_landmarker_lite.task`.
-3. Create `.env` from `.env.example` and set:
-
-   ```env
-   USE_MEDIAPIPE_TASKS=true
-   POSE_MODEL_PATH=./models/pose/pose_landmarker_lite.task
-   MOCK_LLM=true
-   ```
-
-4. Run `python scripts/check_model_paths.py`.
-5. Start the server.
-6. Send a full-body image or webcam frame to `/api/analyze/exercise`.
-
-## Smoke Test
-
-Start the server separately, then run:
-
-```bash
-python scripts/smoke_test.py --base-url http://localhost:9000
-```
-
-The smoke test does not start the server. It calls an already running PC3 server, creates an in-memory dummy image, exercises the four analyze flows, and checks that mode mismatch returns `400`.
-
-## API
+## API 요약
 
 ### Health
 
-`GET /health`
+```text
+GET /health
+```
+
+응답:
 
 ```json
 {
@@ -196,9 +171,13 @@ The smoke test does not start the server. It calls an already running PC3 server
 }
 ```
 
-### Sessions
+### Session 시작
 
-`POST /api/sessions/start`
+```text
+POST /api/sessions/start
+```
+
+요청:
 
 ```json
 {
@@ -208,7 +187,7 @@ The smoke test does not start the server. It calls an already running PC3 server
 }
 ```
 
-Response includes:
+응답:
 
 ```json
 {
@@ -221,51 +200,38 @@ Response includes:
 }
 ```
 
-`POST /api/sessions/{session_id}/stop`
+### Session 종료
 
-Stops the session and, for exercise sessions, calls PC2 or mock coaching on `session_completed`.
-
-`GET /api/sessions/{session_id}/result`
-
-Returns the latest stored session result.
-
-### Baselines
-
-User-specific baselines are stored in SQLite at `BASELINE_DB_PATH`. Unknown users fall back to `data/baseline_default.json`.
-
-`GET /api/baselines/users/{user_id}`
-
-Returns the saved user baseline when one exists, otherwise returns the default baseline with `source="default"`.
-
-`POST /api/baselines/users/{user_id}`
-
-Creates or replaces a user's baseline. This endpoint stores only numeric/symbolic baseline values, not original images or frames.
-
-```json
-{
-  "exercise": {
-    "squat": {
-      "avg_count": 12,
-      "avg_stability_score": 0.78
-    }
-  },
-  "face": {
-    "brightness": 0.71,
-    "redness": 0.14,
-    "beard_shadow": 0.31
-  },
-  "outfit": {
-    "preferred_tones": ["navy", "gray", "black"],
-    "preferred_colors": ["navy", "gray", "white"]
-  }
-}
+```text
+POST /api/sessions/{session_id}/stop
 ```
 
-For first-run onboarding, PC1 can ask the user to create a profile such as `user_1` or `user_2`, collect simple baseline measurements, then call this endpoint before starting analysis sessions with the same `user_id`.
+운동 세션에서는 이 시점에만 PC2 또는 mock coaching을 호출합니다. 매 frame마다 LLM을 호출하지 않습니다.
 
-### Sensors
+### Session 결과 조회
 
-`POST /api/sensors/update`
+```text
+GET /api/sessions/{session_id}/result
+```
+
+### Baseline 조회/저장
+
+```text
+GET  /api/baselines/users/{user_id}
+POST /api/baselines/users/{user_id}
+```
+
+사용자별 baseline은 `BASELINE_DB_PATH`의 SQLite DB에 저장합니다. 원본 이미지나 프레임은 저장하지 않습니다.
+
+처음 사용하는 PC1은 사용자를 `user_1`, `user_2`처럼 생성하고 간단한 baseline 값을 저장한 뒤, 이후 session에서 같은 `user_id`를 쓰면 됩니다.
+
+### Sensor update
+
+```text
+POST /api/sensors/update
+```
+
+요청:
 
 ```json
 {
@@ -277,82 +243,89 @@ For first-run onboarding, PC1 can ask the user to create a profile such as `user
 
 ### Analyze
 
-Each analyze endpoint must be called with a session created for the same `mode`. For example, a session started with `mode=exercise` cannot call `/api/analyze/grooming`; PC3 returns `400 Bad Request`.
+각 analyze endpoint는 같은 mode로 생성된 session에서만 호출해야 합니다.
 
-`POST /api/analyze/exercise`
+예를 들어 `mode=exercise` session으로 `/api/analyze/grooming`을 호출하면 `400 Bad Request`를 반환합니다.
 
-Multipart fields:
+```text
+POST /api/analyze/exercise
+POST /api/analyze/grooming
+POST /api/analyze/outfit
+POST /api/analyze/outing
+```
 
-- `session_id`
-- `file`
+모든 analyze 요청은 `multipart/form-data`를 사용합니다.
 
-Returns an exercise update and broadcasts the same realtime state to WebSocket subscribers.
+## WebSocket
 
-`POST /api/analyze/grooming`
+운동 실시간 업데이트 전용입니다.
 
-Multipart fields:
+```text
+WS /ws/sessions/{session_id}
+```
 
-- `session_id`
-- `file`
+예시 메시지:
 
-Returns face features, face baseline diff, environment, and coaching.
+```json
+{
+  "type": "exercise_update",
+  "session_id": "sess_xxx",
+  "count": 8,
+  "state": "down",
+  "feedback": "무릎이 안쪽으로 모이지 않게 해주세요."
+}
+```
 
-`POST /api/analyze/outfit`
+## 실행용 모델
 
-Multipart fields:
+PC3에는 학습용 얼굴/운동/패션 데이터셋을 넣지 않습니다. 필요한 것은 실행용 모델 파일, baseline JSON, threshold 설정, color rules 정도입니다.
 
-- `session_id`
-- `file`
-- `purpose` optional: `interview`, `date`, `daily`, `casual`
+현재 실제 MediaPipe runtime 연결 대상은 Pose Landmarker Lite입니다.
 
-Returns outfit features, environment, and coaching.
+```text
+models/pose/pose_landmarker_lite.task
+```
 
-`POST /api/analyze/outing`
+모델 파일은 Git에 커밋하지 않습니다. `models/.gitignore`가 `.task`, `.tflite`, `.onnx`, `.pt`, `.pth`, `.bin`, `.safetensors` 등을 차단합니다.
 
-Multipart fields:
+모델 경로 확인:
 
-- `session_id`
-- `file`
-- `purpose`: `interview`, `date`, or `daily`
+```bash
+python scripts/check_model_paths.py
+```
 
-Runs face and outfit analyzers on the same image, adds the latest sensor environment, and returns coaching.
+모델이 없어도 fallback/mock mode로 서버가 실행됩니다.
 
-## PC1 Exercise Flow
+## Smoke test
 
-PC1 is not implemented in this repository. The backend is prepared so a future PC1 app can use this flow:
+서버를 먼저 실행한 뒤 smoke test를 실행합니다.
 
-1. Call `POST /api/sessions/start`.
-2. Connect to the returned `ws_url`.
-3. Upload frames to `POST /api/analyze/exercise`.
-4. Receive realtime `count`, `state`, and `feedback` over WebSocket.
-5. Call `POST /api/sessions/{session_id}/stop`.
-6. Display the final coaching JSON.
+```bash
+python scripts/smoke_test.py --base-url http://localhost:9000
+```
 
-WebSocket is used for exercise realtime updates only. `grooming`, `outfit`, and `outing` return final coaching through REST responses.
+이 스크립트는 서버를 직접 실행하지 않습니다. 이미 실행 중인 PC3 서버에 요청을 보내 기본 API 흐름을 확인합니다.
 
-## PC2 Coach Contract
-
-PC2 is an external system. PC3 calls `POST /api/coach/generate` through the configured `PC2_COACH_API_URL`.
-
-The full prompt and JSON contract is documented in [docs/pc2_prompt_contract.md](docs/pc2_prompt_contract.md).
-
-PC2 receives only `FeaturePayload`:
-
-- Extracted exercise, face, and outfit features
-- Baseline diff
-- Sensor environment
-- Mode, event, purpose
-
-PC2 must return only `CoachingResponse` JSON.
-
-## Mock Mode
-
-Set `MOCK_LLM=true` to skip PC2 and return deterministic mode-specific mock coaching. This is the default so the server can run without PC1, PC2, camera hardware, or sensors.
-
-## Tests
+## 테스트
 
 ```bash
 pytest
 ```
 
-The default tests do not require a real camera, local model files, or a running PC2 server.
+기본 테스트는 실제 카메라, 실제 PC2 서버, face/segmentation 모델 없이 통과해야 합니다.
+
+## Git 관리 원칙
+
+커밋하지 않는 파일:
+
+- `.env`
+- `data/baselines.sqlite3`
+- `models/**/*.task`
+- `models/**/*.tflite`
+- LLM/RAG 모델 파일
+- 원본 얼굴 이미지
+- 웹캠 프레임
+- 운동 영상
+- `node_modules`, build output, cache
+
+문서와 소스 파일은 UTF-8 기준으로 관리합니다. `.editorconfig`와 `.gitattributes`를 함께 사용합니다.

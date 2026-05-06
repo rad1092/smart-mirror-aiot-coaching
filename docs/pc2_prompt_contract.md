@@ -1,14 +1,14 @@
 # PC2 Prompt Contract
 
-This document defines the prompt and payload contract between PC3 Vision Gateway and the external PC2 Coach API.
+이 문서는 PC3 Vision Gateway와 외부 PC2 Coach API 사이의 prompt/payload 계약입니다.
 
-PC2 is not implemented in this repository. PC3 calls only the wrapper endpoint configured by `PC2_COACH_API_URL`.
+PC2 서버는 이 저장소에 구현하지 않습니다. PC3는 `.env`의 `PC2_COACH_API_URL`에 설정된 wrapper endpoint만 호출합니다.
 
-## Input Contract
+## 입력 계약
 
-PC2 receives exactly one JSON object: `FeaturePayload`.
+PC2는 정확히 하나의 JSON 객체인 `FeaturePayload`만 입력으로 받습니다.
 
-Allowed input:
+허용 입력:
 
 - `user_id`
 - `session_id`
@@ -19,24 +19,24 @@ Allowed input:
 - `environment`
 - `purpose`
 
-Forbidden input:
+금지 입력:
 
-- Raw image files
-- Base64 image strings
-- Frame paths or local image paths
-- Video files
-- Full landmark lists
-- Segmentation masks
-- Camera stream URLs
-- Any hidden visual context not represented in `FeaturePayload`
+- 원본 이미지 파일
+- base64 이미지 문자열
+- frame path 또는 local image path
+- 영상 파일
+- 전체 landmark list
+- segmentation mask
+- camera stream URL
+- `FeaturePayload`에 표현되지 않은 숨은 시각 정보
 
-PC2 must assume that the LLM never sees the image. It sees only numeric and symbolic feature values extracted by PC3.
+PC2는 LLM이 이미지를 직접 보지 않는다고 가정해야 합니다. LLM은 PC3가 추출한 수치/상태 feature만 봅니다.
 
-## Output Contract
+## 출력 계약
 
-PC2 must return only a `CoachingResponse` JSON object.
+PC2는 `CoachingResponse` JSON 객체만 반환해야 합니다.
 
-Required shape:
+필수 구조:
 
 ```json
 {
@@ -53,83 +53,118 @@ Required shape:
 }
 ```
 
-No markdown, no prose outside JSON, and no extra top-level keys should be returned.
+JSON 밖에 Markdown, 설명문, 추가 자연어 문장을 붙이지 않습니다. 불필요한 top-level key도 추가하지 않습니다.
 
-## Safety Rules
+## 안전 규칙
 
-The model must not:
+PC2 모델은 다음을 하면 안 됩니다.
 
-- Claim to diagnose a medical condition.
-- Infer skin disease, inflammation, injury, fatigue, or health status from the face features.
-- Insult, shame, or rank the user's appearance.
-- Insult or shame the user's body.
-- Guess facts that are not present in `FeaturePayload`.
-- Pretend that it saw the raw image.
-- Recommend medication, treatment, or clinical action.
+- 의학적 진단처럼 말하기
+- 얼굴 feature로 피부 질환, 염증, 부상, 피로, 건강 상태 추정하기
+- 외모 비하, 신체 비하, 점수 매기기
+- `FeaturePayload`에 없는 사실 추측하기
+- 원본 이미지를 봤다고 말하기
+- 약물, 치료, 임상 조치 권하기
 
-Face and grooming values are self-management signals only. They are not medical evidence.
+얼굴/그루밍 값은 자기관리 참고 신호일 뿐입니다. 의료적 근거가 아닙니다.
 
-## Mode Guidance
+## mode별 응답 방향
 
 ### exercise
 
-Use `features.exercise` and `baseline_diff.exercise`.
+사용 데이터:
 
-Focus on:
+- `features.exercise`
+- `baseline_diff.exercise`
 
-- Exercise record
-- Squat count
-- Stability score
-- Posture error IDs
-- Baseline diff
-- Safe next routine
+응답 초점:
 
-Do not call PC2 for every frame. PC3 calls this mode only on `session_completed`.
+- 운동 기록
+- 스쿼트 횟수
+- stability score
+- posture error ID
+- baseline 대비 변화
+- 다음 안전 루틴
 
-`exercise` frame updates are handled inside PC3 and must not trigger PC2. PC3 may use pose landmarks internally, but landmark lists must not be sent to PC2.
+PC3는 매 frame마다 PC2를 호출하지 않습니다. `exercise`에서는 `session_completed` 시점에만 PC2를 호출합니다.
+
+`exercise` frame update는 PC3가 직접 처리합니다. PC3 내부에서 pose landmark를 사용할 수 있지만 landmark 전체 목록은 PC2로 보내지 않습니다.
 
 ### grooming
 
-Use `features.face` and `baseline_diff.face`.
+사용 데이터:
 
-Focus on:
+- `features.face`
+- `baseline_diff.face`
+- `environment.illuminance`
 
-- Brightness diff
-- Redness ratio diff as a neutral visual feature
-- Beard shadow ratio diff
-- Simple self-management routine
-- Lighting and grooming check
+응답 초점:
 
-Do not describe medical conditions, skin disease, inflammation, fatigue, or health status.
+- brightness diff
+- redness ratio diff
+- beard shadow ratio diff
+- 조명 확인
+- 간단한 자기관리 루틴
+
+피부 질환, 염증, 피로, 건강 상태처럼 말하지 않습니다.
 
 ### outfit
 
-Use `features.outfit`, `environment`, and optional `purpose`.
+사용 데이터:
 
-Focus on:
+- `features.outfit`
+- `environment`
+- `purpose`
 
-- Top and bottom color names
-- Contrast score
-- Overall tone
-- Purpose-aware color balance suggestion
-- Environment-aware check when useful
+응답 초점:
 
-Do not claim precise style judgment beyond the extracted color features.
+- 상의/하의 색상명
+- contrast score
+- 전체 tone
+- 목적에 맞는 색상 균형
+- 필요 시 조명/날씨 확인
+
+PC3는 색상 feature만 만들기 때문에 PC2도 정밀한 스타일 판정처럼 단정하지 않습니다.
 
 ### outing
 
-Use `features.face`, `features.outfit`, `baseline_diff.face`, `environment`, and `purpose`.
+사용 데이터:
 
-Focus on:
+- `features.face`
+- `features.outfit`
+- `baseline_diff.face`
+- `environment`
+- `purpose`
 
-- Final check before going out
-- Face feature self-management check
-- Outfit color balance
-- Purpose-specific reminders
-- Environment and lighting reminders
+응답 초점:
 
-Do not infer unseen items or context outside the payload.
+- 외출 전 최종 점검
+- 얼굴/그루밍 자기관리 확인
+- 옷 색상 균형
+- 목적별 짧은 reminder
+- 조명과 환경 확인
 
-## Trigger Boundary
+입력 payload에 없는 물건, 상황, 외모 상태를 추측하지 않습니다.
 
-PC3 must not call PC2 during `exercise` frame updates. PC2 coaching is generated only at session stop for exercise, or after a completed one-shot analysis for grooming, outfit, and outing.
+## Trigger 경계
+
+PC3는 `exercise` frame update 중에는 PC2를 호출하지 않습니다.
+
+PC2 coaching 생성 시점:
+
+- `exercise`: session stop 후 `session_completed`
+- `grooming`: 단발 분석 완료 후 `analysis_completed`
+- `outfit`: 단발 분석 완료 후 `analysis_completed`
+- `outing`: 단발 분석 완료 후 `analysis_completed`
+
+## Prompt 작성 원칙
+
+PC2 system prompt에는 최소한 다음 문장을 포함하는 것을 권장합니다.
+
+```text
+너는 스마트미러 자기관리 코칭 API다.
+너는 이미지를 직접 보지 않는다.
+입력은 PC3 Vision Gateway가 만든 FeaturePayload JSON뿐이다.
+출력은 CoachingResponse JSON만 허용된다.
+의학적 진단, 피부 질환 추정, 외모 비하, 입력에 없는 사실 추측을 하지 않는다.
+```

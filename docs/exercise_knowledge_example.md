@@ -1,71 +1,74 @@
-# Exercise Knowledge Example for PC2
+# PC2용 운동 지식 예시
 
-This document is an example knowledge source for a future PC2 RAG/knowledge_base.
+이 문서는 나중에 PC2 RAG/knowledge_base에 넣을 수 있는 운동 코칭 지식 예시입니다.
 
-PC3 does not use this document at runtime. PC3 only extracts exercise features such as count, state, stability score, and posture error IDs.
+PC3 runtime은 이 문서를 사용하지 않습니다. PC3는 운동 count, state, stability score, posture error ID 같은 feature만 추출합니다.
 
 ## squat
 
 ### knees_caving_in
 
-Correction sentence:
+교정 문장 예시:
 
-- Keep your knees tracking in the same direction as your toes and slow down the descent.
+- 무릎이 발끝 방향과 비슷하게 움직이도록 천천히 내려가세요.
+- 내려갈 때 무릎이 안쪽으로 모이면 반복 속도를 줄이고 발의 중심을 다시 잡으세요.
 
 ### back_leaning_forward
 
-Correction sentence:
+교정 문장 예시:
 
-- Keep your chest lifted and move your hips back without folding the upper body too far forward.
+- 상체를 과하게 접기보다 가슴을 세우고 엉덩이를 뒤로 보내는 느낌으로 내려가세요.
+- 허리나 등이 불편하면 깊이를 줄이고 자세 안정성을 먼저 확인하세요.
 
-### low count_change
+### count_change가 낮을 때
 
-Routine example:
+루틴 예시:
 
-- Reduce the target count for the next session and use a slower tempo.
-- Add one warm-up set with bodyweight only.
+- 다음 세션 목표 개수를 조금 낮추고 천천한 tempo로 반복합니다.
+- 본 세트 전에 맨몸 warm-up 1세트를 추가합니다.
+- 개수보다 무릎 정렬과 깊이의 일관성을 우선합니다.
 
-### low stability_score
+### stability_score가 낮을 때
 
-Routine example:
+루틴 예시:
 
-- Focus on 5 slow reps with stable knee alignment.
-- Rest longer between sets and stop before form breaks.
+- 5회씩 천천히 반복하며 무릎과 발끝 방향을 맞춥니다.
+- 세트 사이 휴식을 늘리고 자세가 무너지기 전에 중단합니다.
 
 ## pushup
 
-Future extension only.
+현재 PC3 MVP에서는 future extension입니다.
 
 ### hip_sagging
 
-Correction sentence:
+교정 문장 예시:
 
-- Keep your ribs and hips connected so the pelvis does not drop during the push-up.
+- 갈비뼈와 골반이 같이 움직인다는 느낌으로 몸통을 단단히 유지하세요.
 
 ### partial_range
 
-Correction sentence:
+교정 문장 예시:
 
-- Use a smaller set size and aim for a more consistent elbow range.
+- 반복 수를 줄이고 팔꿈치 가동 범위를 일정하게 유지하는 데 집중하세요.
 
 ## plank
 
-Future extension only.
+현재 PC3 MVP에서는 future extension입니다.
 
 ### hip_too_low
 
-Correction sentence:
+교정 문장 예시:
 
-- Lift the pelvis slightly and keep a straight line from shoulder to ankle.
+- 골반을 살짝 들어 어깨부터 발목까지의 선을 더 곧게 유지하세요.
 
 ### hip_too_high
 
-Correction sentence:
+교정 문장 예시:
 
-- Lower the hips until the body line becomes flatter, without letting the lower back sag.
+- 허리가 꺾이지 않는 범위에서 엉덩이를 조금 낮춰 몸의 선을 평평하게 맞추세요.
 
-## Safety Language
+## 안전 문장
 
-- Stop the exercise if pain occurs.
-- Stable posture is more important than forcing extra repetitions.
-- Do not describe the result as medical, rehabilitation, or clinical diagnosis.
+- 통증이 있으면 운동을 중단하세요.
+- 무리한 반복보다 안정적인 자세가 우선입니다.
+- 운동 결과를 의료, 재활, 임상 진단처럼 표현하지 마세요.

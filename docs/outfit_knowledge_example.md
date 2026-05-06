@@ -1,22 +1,22 @@
-# Outfit Knowledge Example for PC2
+# PC2용 옷 색상/스타일 지식 예시
 
-This document is an example knowledge source for a future PC2 RAG/knowledge_base.
+이 문서는 나중에 PC2 RAG/knowledge_base에 넣을 수 있는 코디 지식 예시입니다.
 
-PC3 does not use this document at runtime. PC3 only extracts outfit features such as `top_color`, `bottom_color`, `contrast_score`, and `tone`.
+PC3 runtime은 이 문서를 사용하지 않습니다. PC3는 `top_color`, `bottom_color`, `contrast_score`, `tone` 같은 feature만 추출합니다.
 
 ## color_combination_rules
 
-- Navy pairs well with white, gray, and beige.
-- Black pairs well with white, gray, and beige, but black with navy can make the whole outfit look very dark.
-- Beige pairs softly with navy, brown, and white.
-- Gray works as a neutral bridge color for black, navy, white, and green.
-- Brown pairs naturally with beige, white, and muted green.
+- navy는 white, gray, beige와 잘 어울립니다.
+- black은 white, gray, beige와 잘 어울리지만 navy와 함께 쓰면 전체가 어두워 보일 수 있습니다.
+- beige는 navy, brown, white와 부드럽게 어울립니다.
+- gray는 black, navy, white, green 사이에서 중립적인 연결 색으로 사용할 수 있습니다.
+- brown은 beige, white, muted green과 자연스럽게 어울립니다.
 
 ## purpose_style_rules
 
 ### interview
 
-Recommended colors:
+권장 색상:
 
 - navy
 - gray
@@ -24,15 +24,15 @@ Recommended colors:
 - black
 - beige
 
-Direction:
+방향:
 
-- Keep the outfit neat and reliable.
-- Prefer calm contrast over strong accent colors.
-- Avoid overly bright or distracting combinations.
+- 단정하고 신뢰감 있는 인상을 우선합니다.
+- 강한 포인트 색보다 차분한 대비를 권장합니다.
+- 지나치게 화려하거나 시선을 분산시키는 조합은 피합니다.
 
 ### date
 
-Recommended colors:
+권장 색상:
 
 - white
 - beige
@@ -40,14 +40,14 @@ Recommended colors:
 - brown
 - navy
 
-Direction:
+방향:
 
-- Keep the impression soft and natural.
-- Use one gentle bright element if the rest of the outfit is dark.
+- 부드럽고 자연스러운 인상을 우선합니다.
+- 전체가 어두우면 한 가지 밝은 요소를 추가할 수 있습니다.
 
 ### daily
 
-Recommended colors:
+권장 색상:
 
 - gray
 - black
@@ -55,24 +55,28 @@ Recommended colors:
 - navy
 - green
 
-Direction:
+방향:
 
-- Keep comfort and activity in mind.
-- Prefer simple combinations that are easy to move in.
+- 편안함과 활동성을 우선합니다.
+- 움직이기 쉽고 과하게 복잡하지 않은 조합을 권장합니다.
 
 ## style_categories
+
+PC2 RAG에서 참고할 수 있는 style category 예시입니다.
 
 - formal
 - business_casual
 - casual
 - sporty
 
+PC3는 이 category를 확정 분류하지 않습니다.
+
 ## weather_outfit_rules
 
-- When humidity is high, prefer lighter and brighter combinations over thick dark tones.
-- When temperature is low, darker tones and layering can be suggested.
-- When illuminance is low, recommend checking the outfit once more under brighter light.
+- 습도가 높으면 두껍고 어두운 tone보다 가볍고 밝은 조합을 제안할 수 있습니다.
+- 기온이 낮으면 어두운 tone과 layering을 제안할 수 있습니다.
+- 조도가 낮으면 더 밝은 조명에서 옷 색상을 다시 확인하라고 안내할 수 있습니다.
 
-## Boundary
+## 경계
 
-PC3 must not directly use these rules to produce long outfit advice. PC2 can retrieve this knowledge after receiving PC3's `FeaturePayload`.
+PC3는 이 지식을 직접 사용해 긴 코디 조언을 만들지 않습니다. PC2가 PC3의 `FeaturePayload`를 받은 뒤 RAG 지식으로 참고할 수 있습니다.

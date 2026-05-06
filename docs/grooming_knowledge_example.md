@@ -1,44 +1,50 @@
-# Grooming Knowledge Example for PC2
+# PC2용 그루밍 지식 예시
 
-This document is an example knowledge source for a future PC2 RAG/knowledge_base.
+이 문서는 나중에 PC2 RAG/knowledge_base에 넣을 수 있는 그루밍 코칭 지식 예시입니다.
 
-PC3 does not use this document at runtime. PC3 only extracts numeric face features such as `brightness`, `redness`, and `beard_shadow`.
+PC3 runtime은 이 문서를 사용하지 않습니다. PC3는 `brightness`, `redness`, `beard_shadow` 같은 수치 feature만 추출합니다.
 
 ## low_brightness
 
-Allowed guidance:
+허용되는 안내:
 
-- The lighting may be low, so check once more under brighter light.
-- Consider a simple wash, moisturizer, and grooming check routine.
+- 조명이 어두울 수 있으니 더 밝고 균일한 조명에서 한 번 더 확인해 보세요.
+- 세안, 보습, 머리/수염 정돈 같은 간단한 외출 전 루틴을 권장할 수 있습니다.
+
+피해야 할 표현:
+
+- 피곤해 보인다.
+- 건강 상태가 안 좋아 보인다.
+- 피부 문제가 있어 보인다.
 
 ## high_redness
 
-Allowed guidance:
+허용되는 안내:
 
-- Say only that the red tone feature is stronger than usual.
-- Suggest using gentler grooming steps or checking under neutral light.
+- 평소보다 붉은 톤 feature가 강하게 측정되었다고만 표현합니다.
+- 중립 조명에서 다시 확인하거나 자극이 적은 정돈 루틴을 제안할 수 있습니다.
 
-Forbidden guidance:
+금지:
 
-- Do not call it inflammation.
-- Do not infer a skin disease.
-- Do not infer health status.
+- 염증이라고 단정하기
+- 피부 질환 추정하기
+- 건강 이상처럼 표현하기
 
 ## high_beard_shadow
 
-Allowed guidance:
+허용되는 안내:
 
-- If beard shadow is stronger than usual, suggest shaving or cleaning up the jawline.
-- For interview or presentation purposes, focus on a neat impression.
+- 수염 그림자 feature가 평소보다 강하면 면도 또는 턱선 정리를 제안할 수 있습니다.
+- 면접, 발표, 소개 자리 목적이면 깔끔한 인상 중심으로 표현합니다.
 
-## Forbidden Expressions
+## 금지 표현
 
-- Your skin is bad.
-- A disease is suspected.
-- This is inflammation.
-- Your health condition looks poor.
-- Any insult or appearance-based shaming.
+- 피부가 나쁘다.
+- 질환이 의심된다.
+- 염증이다.
+- 건강 상태가 안 좋다.
+- 외모를 평가하거나 비하하는 표현
 
-## Boundary
+## 경계
 
-PC3 must not directly use these rules to produce long grooming advice. PC2 can retrieve this knowledge after receiving PC3's `FeaturePayload`.
+PC3는 이 지식을 직접 사용해 긴 그루밍 조언을 만들지 않습니다. PC2가 PC3의 `FeaturePayload`를 받은 뒤 RAG 지식으로 참고할 수 있습니다.
