@@ -1,10 +1,46 @@
-# PC3 Vision Gateway
+# Smart Mirror AIoT Coaching System
 
-PC3 Vision Gateway is the Python/FastAPI server for a smart mirror AIoT coaching system. It sits between the PC1 smart mirror frontend and the PC2 local Coach API.
+This repository is the shared project repository for the smart mirror AIoT coaching system.
+
+The system is split into three PC roles:
+
+- `PC1`: smart mirror frontend app, planned as Tauri + React + TypeScript.
+- `PC2`: local Coach API server, planned as vLLM + RAG + wrapper endpoint.
+- `PC3`: vision and sensor gateway, implemented here with Python + FastAPI.
+
+The current committed implementation is the PC3 Vision Gateway. PC1 and PC2 teams can use this repository as the integration contract and add their own components in separate folders or branches when their work starts.
+
+PC3 Vision Gateway sits between the PC1 smart mirror frontend and the PC2 local Coach API.
 
 PC3 extracts numeric and symbolic features from images and sensors, compares them with baseline values, decides whether coaching is needed, and calls PC2 only with `FeaturePayload` JSON. PC3 never sends raw images, base64 images, frame paths, saved frames, videos, or camera streams to the LLM.
 
-PC1 and PC2 are external systems. This repository does not implement the PC1 Tauri app or the PC2 vLLM/RAG server.
+PC1 and PC2 are external systems in the current codebase. This version does not implement the PC1 Tauri app or the PC2 vLLM/RAG server.
+
+## Repository Status
+
+Current layout is PC3-first:
+
+```text
+.
+├─ app/                 # PC3 FastAPI application
+├─ config/              # PC3 threshold configs
+├─ data/                # PC3 baseline defaults and feature rules
+├─ docs/                # PC2 prompt contract and future PC2 knowledge examples
+├─ models/              # local-only PC3 runtime model placement
+├─ scripts/             # PC3 validation scripts
+└─ tests/               # PC3 backend tests
+```
+
+If the project moves to a full monorepo later, keep the ownership boundary explicit:
+
+```text
+smart-mirror-aiot-coaching/
+├─ pc1-smart-mirror/
+├─ pc2-coach-server/
+└─ pc3-vision-gateway/
+```
+
+Until then, PC1 and PC2 should treat this repo as the authoritative PC3 API and JSON contract.
 
 ## MVP Scope
 
