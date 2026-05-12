@@ -9,6 +9,7 @@
 *.pb
 *.h5
 *.keras
+!pose/pose_landmarker_lite.task
 !README.md
 !.gitignore
 !.gitkeep

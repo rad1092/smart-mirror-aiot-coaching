@@ -1,25 +1,23 @@
-# PC3 운동 자세 모델
+# PC3 Exercise Pose Model
 
-PC3는 exercise-only 범위의 pose 분석만 유지합니다.
-
-현재 지원하는 로컬 모델 위치:
+PC3 is exercise-only. The runtime uses the MediaPipe Pose Landmarker Lite model below for pose landmark detection:
 
 ```text
 models/pose/pose_landmarker_lite.task
 ```
 
-모델 파일은 Git에 커밋하지 않습니다. `models/.gitignore`가 `.task`, `.tflite`, `.onnx`, `.pt`, `.pth`, `.bin`, `.safetensors` 같은 모델/가중치 형식을 차단합니다.
+This pose model is committed to the repository because PC3 needs it to run real exercise analysis after a fresh clone.
 
-모델 파일이 없어도 PC3는 fallback/mock mode로 실행되어야 합니다.
+Other model and weight formats remain ignored by `models/.gitignore` unless they are explicitly allowed. The removed face and segmentation features do not require model files.
 
-## 설정
+## Runtime Settings
 
 ```env
 USE_MEDIAPIPE_TASKS=true
 POSE_MODEL_PATH=./models/pose/pose_landmarker_lite.task
 ```
 
-모델 경로 확인:
+Check the local model path with:
 
 ```bash
 python scripts/check_model_paths.py
