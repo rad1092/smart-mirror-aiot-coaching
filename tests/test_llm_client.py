@@ -17,8 +17,29 @@ def _exercise_payload() -> FeaturePayload:
         session_id="sess_test",
         mode="exercise",
         event="session_completed",
-        features=FeatureSet(exercise=ExerciseFeature(type="pushup", count=5, state="up", stability_score=0.72)),
-        baseline_diff={"exercise": {"count_change": -2, "stability_change": -0.1}},
+        features=FeatureSet(
+            exercise=ExerciseFeature(
+                type="pushup",
+                count=5,
+                count_left=3,
+                count_right=2,
+                state="up",
+                stability_score=0.72,
+                posture_errors=[],
+                knee_angle=92.5,
+                back_angle=8.0,
+                rep_phase="down",
+                active_side="LEFT",
+            )
+        ),
+        baseline_diff={
+            "exercise": {
+                "count_change": -2,
+                "stability_change": -0.1,
+                "knee_angle_change": 4.5,
+                "count_left_change": 1,
+            }
+        },
         environment=EnvironmentFeature(temperature=24.5),
         purpose=None,
     )
@@ -43,8 +64,20 @@ def test_pc2_request_json_contains_only_exercise_contract_fields():
     assert request_json["mode"] == "exercise"
     assert request_json["event"] == "session_completed"
     assert set(request_json["features"]) == {"exercise"}
-    assert request_json["features"]["exercise"]["type"] == "pushup"
+    exercise_json = request_json["features"]["exercise"]
+    assert exercise_json["type"] == "pushup"
+    assert exercise_json["knee_angle"] == 92.5
+    assert exercise_json["back_angle"] == 8.0
+    assert "count_left" not in exercise_json
+    assert "count_right" not in exercise_json
+    assert "rep_phase" not in exercise_json
+    assert "active_side" not in exercise_json
     assert set(request_json["baseline_diff"]) == {"exercise"}
+    assert request_json["baseline_diff"]["exercise"] == {
+        "count_change": -2,
+        "stability_change": -0.1,
+        "knee_angle_change": 4.5,
+    }
     assert request_json["environment"] == {"temperature": 24.5}
     assert "purpose" not in request_json
     assert _contains_none(request_json) is False

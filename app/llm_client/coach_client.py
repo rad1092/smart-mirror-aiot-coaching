@@ -12,6 +12,29 @@ from app.schemas.feature import FeaturePayload
 logger = logging.getLogger(__name__)
 
 
+PC2_EXERCISE_FIELDS = {
+    "type",
+    "count",
+    "rep_count",
+    "state",
+    "stability_score",
+    "posture_errors",
+    "squat_depth",
+    "knee_angle",
+    "back_angle",
+    "duration_sec",
+    "duration_seconds",
+    "tempo",
+}
+PC2_BASELINE_DIFF_FIELDS = {
+    "count_change",
+    "stability_change",
+    "knee_angle_change",
+    "squat_depth_change",
+    "duration_change",
+}
+
+
 class CoachClient:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
@@ -43,12 +66,16 @@ class CoachClient:
             "mode": "exercise",
             "event": "session_completed",
             "features": {
-                "exercise": exercise.model_dump(mode="json", exclude_none=True),
+                "exercise": self._dump_pc2_exercise(exercise),
             },
         }
 
         exercise_diff = payload.baseline_diff.get("exercise") if payload.baseline_diff else None
-        request["baseline_diff"] = {"exercise": exercise_diff} if exercise_diff is not None else {}
+        request["baseline_diff"] = (
+            {"exercise": self._dump_pc2_baseline_diff(exercise_diff)}
+            if exercise_diff is not None
+            else {}
+        )
 
         if payload.environment is not None:
             environment = payload.environment.model_dump(mode="json", exclude_none=True)
@@ -57,6 +84,17 @@ class CoachClient:
         if payload.purpose:
             request["purpose"] = payload.purpose
         return request
+
+    def _dump_pc2_exercise(self, exercise) -> dict:
+        raw = exercise.model_dump(mode="json", exclude_none=True)
+        return {key: value for key, value in raw.items() if key in PC2_EXERCISE_FIELDS}
+
+    def _dump_pc2_baseline_diff(self, exercise_diff: dict) -> dict:
+        return {
+            key: value
+            for key, value in exercise_diff.items()
+            if key in PC2_BASELINE_DIFF_FIELDS and value is not None
+        }
 
     def _mock_response(self, payload: FeaturePayload) -> CoachingResponse:
         exercise = payload.features.exercise

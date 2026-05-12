@@ -17,6 +17,15 @@ class ExerciseFeature(BaseModel):
     state: ExerciseState = "idle"
     stability_score: float = Field(default=0.0, ge=0.0, le=1.0)
     posture_errors: list[str] = Field(default_factory=list)
+    count_left: int | None = None
+    count_right: int | None = None
+    squat_depth: float | None = None
+    knee_angle: float | None = None
+    back_angle: float | str | None = None
+    duration_sec: float | None = None
+    tempo: str | None = None
+    rep_phase: str | None = None
+    active_side: str | None = None
 
 
 class FeatureSet(BaseModel):

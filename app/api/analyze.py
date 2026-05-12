@@ -49,7 +49,7 @@ async def analyze_exercise(
     session = _session_for_mode(session_id, "exercise", store)
     frame = await _decode_upload(file)
     previous = store.get_features(session_id).exercise
-    exercise, feedback = pose_analyzer.analyze(frame, previous)
+    exercise, feedback = pose_analyzer.analyze(frame, previous, exercise_type=session.goal)
     exercise = exercise.model_copy(update={"type": normalize_exercise_type(session.goal)})
     store.set_exercise_feature(session_id, exercise)
     message = {
@@ -61,6 +61,10 @@ async def analyze_exercise(
         "posture_errors": exercise.posture_errors,
         "stability_score": exercise.stability_score,
     }
+    if exercise.count_left is not None:
+        message["count_left"] = exercise.count_left
+    if exercise.count_right is not None:
+        message["count_right"] = exercise.count_right
     await manager.broadcast(session_id, message)
     return ExerciseAnalyzeResponse(
         session_id=session_id,
