@@ -11,7 +11,7 @@ def test_get_unknown_user_baseline_returns_default(client):
     assert body["user_id"] == "unknown_user"
     assert body["source"] == "default"
     assert "exercise" in body["baseline"]
-    assert "face" in body["baseline"]
+    assert "body" in body["baseline"]
 
 
 def test_upsert_and_get_user_baseline(client):
@@ -22,15 +22,8 @@ def test_upsert_and_get_user_baseline(client):
                 "avg_stability_score": 0.67,
             }
         },
-        "face": {
-            "brightness": 0.55,
-            "redness": 0.2,
-            "beard_shadow": 0.35,
-        },
-        "outfit": {
-            "preferred_tones": ["navy"],
-            "preferred_colors": ["navy", "white"],
-        },
+        "body": {"body_front_full": {"captured": True}},
+        "face": {"face_front": {"captured": True}},
     }
 
     save_response = client.post("/api/baselines/users/api_user_1", json=payload)
@@ -44,8 +37,8 @@ def test_upsert_and_get_user_baseline(client):
     assert saved["source"] == "user"
     assert loaded["source"] == "user"
     assert loaded["baseline"]["exercise"]["squat"]["avg_count"] == 7
-    assert loaded["baseline"]["face"]["brightness"] == 0.55
-    assert loaded["baseline"]["outfit"]["preferred_colors"] == ["navy", "white"]
+    assert loaded["baseline"]["body"]["body_front_full"]["captured"] is True
+    assert loaded["baseline"]["face"]["face_front"]["captured"] is True
 
 
 def test_capture_baseline_slot_saves_body_checkpoint(client, image_bytes):

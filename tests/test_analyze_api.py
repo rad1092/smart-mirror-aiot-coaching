@@ -102,73 +102,19 @@ def test_exercise_session_goal_sets_final_exercise_type(client):
     assert body["coaching"]["exercise_plan"][0]["exercise"] == "pushup"
 
 
-def test_grooming_analyze_returns_face_features_and_coaching(client, image_bytes):
-    session_id = _start_session(client, "grooming")
+def test_removed_non_exercise_modes_are_not_available(client, image_bytes):
+    start_response = client.post(
+        "/api/sessions/start",
+        json={"user_id": "default", "mode": "grooming"},
+    )
+    assert start_response.status_code == 422
 
-    response = client.post(
+    analyze_response = client.post(
         "/api/analyze/grooming",
-        data={"session_id": session_id},
+        data={"session_id": "sess_missing"},
         files=_file(image_bytes),
     )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["mode"] == "grooming"
-    assert body["features"]["face"] is not None
-    assert "brightness_diff" in body["baseline_diff"]["face"]
-    assert body["coaching"]["summary"]
-
-
-def test_outfit_analyze_returns_outfit_features_and_coaching(client, image_bytes):
-    session_id = _start_session(client, "outfit")
-
-    response = client.post(
-        "/api/analyze/outfit",
-        data={"session_id": session_id, "purpose": "interview"},
-        files=_file(image_bytes),
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["mode"] == "outfit"
-    assert body["features"]["outfit"] is not None
-    assert body["features"]["outfit"]["top_color"]["name"]
-    assert body["coaching"]["summary"]
-
-
-def test_outing_analyze_returns_face_outfit_environment_and_coaching(client, image_bytes):
-    sensor_response = client.post(
-        "/api/sensors/update",
-        json={"temperature": 24.5, "humidity": 48, "illuminance": 360},
-    )
-    assert sensor_response.status_code == 200
-    session_id = _start_session(client, "outing")
-
-    response = client.post(
-        "/api/analyze/outing",
-        data={"session_id": session_id, "purpose": "daily"},
-        files=_file(image_bytes),
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["mode"] == "outing"
-    assert body["features"]["face"] is not None
-    assert body["features"]["outfit"] is not None
-    assert body["environment"]["temperature"] == 24.5
-    assert body["coaching"]["summary"]
-
-
-def test_analyze_endpoint_rejects_session_mode_mismatch(client, image_bytes):
-    session_id = _start_session(client, "exercise", "squat")
-
-    response = client.post(
-        "/api/analyze/grooming",
-        data={"session_id": session_id},
-        files=_file(image_bytes),
-    )
-
-    assert response.status_code == 400
+    assert analyze_response.status_code == 404
 
 
 def _has_no_mojibake(text: str) -> bool:

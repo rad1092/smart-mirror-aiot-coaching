@@ -5,14 +5,14 @@ from datetime import datetime, timezone
 from app.baseline.baseline_service import BaselineService
 from app.baseline.baseline_store import BaselineStore
 from app.features.feature_builder import FeatureBuilder
-from app.schemas.feature import FaceFeature, FeatureSet
+from app.schemas.feature import ExerciseFeature, FeatureSet
 from app.schemas.sensor import EnvironmentFeature
 from app.schemas.session import Session, SessionMode, SessionStatus
 from app.sensors.sensor_service import SensorService
 from app.storage.memory_store import MemoryStore
 
 
-def test_feature_builder_builds_grooming_payload(baseline_path):
+def test_feature_builder_builds_exercise_payload(baseline_path):
     store = MemoryStore()
     sensor_service = SensorService(store)
     sensor_service.update_environment(
@@ -24,18 +24,18 @@ def test_feature_builder_builds_grooming_payload(baseline_path):
     session = Session(
         session_id="sess_test",
         user_id="default",
-        mode=SessionMode.grooming,
-        goal=None,
+        mode=SessionMode.exercise,
+        goal="squat",
         status=SessionStatus.running,
         created_at=now,
         updated_at=now,
     )
-    features = FeatureSet(face=FaceFeature(brightness=0.62, redness=0.18, beard_shadow=0.44))
+    features = FeatureSet(exercise=ExerciseFeature(count=12, state="up", stability_score=0.74))
 
-    payload = builder.build_payload(session, "analysis_completed", features)
+    payload = builder.build_payload(session, "session_completed", features)
 
-    assert payload.mode == "grooming"
-    assert payload.features.face is not None
-    assert payload.baseline_diff["face"]["brightness_diff"] == -0.12
+    assert payload.mode == "exercise"
+    assert payload.features.exercise is not None
+    assert payload.baseline_diff["exercise"]["count_change"] == -3
     assert payload.environment is not None
     assert payload.environment.temperature == 24.5

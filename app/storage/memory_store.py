@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from threading import RLock
 
 from app.schemas.coaching import CoachingResponse
-from app.schemas.feature import ExerciseFeature, FaceFeature, FeatureSet, OutfitFeature
+from app.schemas.feature import ExerciseFeature, FeatureSet
 from app.schemas.sensor import EnvironmentFeature
 from app.schemas.session import Session, SessionResultResponse, SessionStatus
 
@@ -61,22 +61,6 @@ class MemoryStore:
         with self._lock:
             features = self._features.get(session_id, FeatureSet())
             features.exercise = feature
-            self._features[session_id] = features
-            self.touch_session(session_id)
-            return features
-
-    def set_face_feature(self, session_id: str, feature: FaceFeature) -> FeatureSet:
-        with self._lock:
-            features = self._features.get(session_id, FeatureSet())
-            features.face = feature
-            self._features[session_id] = features
-            self.touch_session(session_id)
-            return features
-
-    def set_outfit_feature(self, session_id: str, feature: OutfitFeature) -> FeatureSet:
-        with self._lock:
-            features = self._features.get(session_id, FeatureSet())
-            features.outfit = feature
             self._features[session_id] = features
             self.touch_session(session_id)
             return features

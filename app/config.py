@@ -23,28 +23,8 @@ def default_pose_model_path() -> Path:
     return project_root() / "models" / "pose" / "pose_landmarker_lite.task"
 
 
-def default_face_model_path() -> Path:
-    return project_root() / "models" / "face" / "face_landmarker.task"
-
-
-def default_segmenter_model_path() -> Path:
-    return project_root() / "models" / "segmentation" / "selfie_segmenter.tflite"
-
-
 def default_exercise_thresholds_path() -> Path:
     return project_root() / "config" / "exercise_thresholds.json"
-
-
-def default_face_thresholds_path() -> Path:
-    return project_root() / "config" / "face_thresholds.json"
-
-
-def default_outfit_thresholds_path() -> Path:
-    return project_root() / "config" / "outfit_thresholds.json"
-
-
-def default_color_rules_path() -> Path:
-    return project_root() / "data" / "color_rules.json"
 
 
 def default_exercise_rules_path() -> Path:
@@ -64,12 +44,7 @@ class Settings(BaseSettings):
     )
     use_mediapipe_tasks: bool = False
     pose_model_path: Path = Field(default_factory=default_pose_model_path)
-    face_model_path: Path = Field(default_factory=default_face_model_path)
-    segmenter_model_path: Path = Field(default_factory=default_segmenter_model_path)
     config_exercise_thresholds: Path = Field(default_factory=default_exercise_thresholds_path)
-    config_face_thresholds: Path = Field(default_factory=default_face_thresholds_path)
-    config_outfit_thresholds: Path = Field(default_factory=default_outfit_thresholds_path)
-    color_rules_path: Path = Field(default_factory=default_color_rules_path)
     exercise_rules_path: Path = Field(default_factory=default_exercise_rules_path)
     baseline_path: Path = Field(default_factory=default_baseline_path)
     baseline_db_path: Path = Field(default_factory=default_baseline_db_path)

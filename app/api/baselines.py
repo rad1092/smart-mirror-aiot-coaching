@@ -3,14 +3,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from app.baseline.baseline_service import BaselineService
-from app.dependencies import get_baseline_service, get_face_analyzer, get_pose_analyzer
+from app.dependencies import get_baseline_service, get_pose_analyzer
 from app.schemas.baseline import (
     BaselineCaptureResponse,
     BaselineResponse,
     BaselineUpsertRequest,
     BaselineUpsertResponse,
 )
-from app.vision.face_analyzer import FaceAnalyzer
 from app.vision.frame_utils import decode_image_bytes
 from app.vision.pose_analyzer import PoseAnalyzer
 
@@ -49,7 +48,6 @@ async def capture_baseline_slot(
     user_id: str,
     slot_type: str = Form(...),
     file: UploadFile = File(...),
-    face_analyzer: FaceAnalyzer = Depends(get_face_analyzer),
     pose_analyzer: PoseAnalyzer = Depends(get_pose_analyzer),
     baseline_service: BaselineService = Depends(get_baseline_service),
 ) -> BaselineCaptureResponse:
@@ -63,15 +61,18 @@ async def capture_baseline_slot(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    mean_brightness = float(frame.mean()) / 255.0
     if slot_type == "face_front":
-        face = face_analyzer.analyze(frame)
-        valid = face.brightness > 0.15
+        valid = mean_brightness > 0.15
         if valid:
-            baseline_service.upsert_baseline(user_id, {"face": face.model_dump()})
+            baseline_service.upsert_baseline(
+                user_id,
+                {"face": {"face_front": {"captured": True, "brightness": round(mean_brightness, 3)}}},
+            )
         return BaselineCaptureResponse(
             valid=valid,
             slot_type=slot_type,
-            reason=None if valid else "Face is not visible enough. Face the camera in brighter light.",
+            reason=None if valid else "Frame is too dark. Check the room lighting.",
         )
 
     if pose_analyzer.use_mediapipe:
@@ -89,7 +90,6 @@ async def capture_baseline_slot(
             reason=None if valid else "Full body is not visible. Step back so the camera can see you.",
         )
 
-    mean_brightness = float(frame.mean()) / 255.0
     valid = mean_brightness > 0.10
     if valid:
         baseline_service.upsert_baseline(user_id, {"body": {slot_type: {"captured": True}}})

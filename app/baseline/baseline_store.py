@@ -34,8 +34,7 @@ class BaselineStore:
         return {
             "user_id": "default",
             "exercise": {"squat": {"avg_count": 15, "avg_stability_score": 0.82}},
-            "face": {"brightness": 0.74, "redness": 0.13, "beard_shadow": 0.28},
-            "outfit": {"preferred_tones": ["navy", "gray", "black"]},
+            "body": {},
             "environment": {"baseline_illuminance": 360},
         }
 

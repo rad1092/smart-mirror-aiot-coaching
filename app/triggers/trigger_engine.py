@@ -14,6 +14,4 @@ class TriggerEngine:
         del features, baseline_diff
         if mode == "exercise" and event == "session_completed":
             return True
-        if mode in {"grooming", "outfit", "outing"} and event == "analysis_completed":
-            return True
         return False

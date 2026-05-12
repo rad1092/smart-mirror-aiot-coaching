@@ -17,7 +17,7 @@ class CoachClient:
         self._settings = settings
 
     async def generate(self, payload: FeaturePayload) -> CoachingResponse:
-        if self._settings.mock_llm or payload.mode != "exercise" or payload.event != "session_completed":
+        if self._settings.mock_llm:
             return self._mock_response(payload)
 
         try:
@@ -59,75 +59,33 @@ class CoachClient:
         return request
 
     def _mock_response(self, payload: FeaturePayload) -> CoachingResponse:
-        if payload.mode == "exercise":
-            exercise = payload.features.exercise
-            count = exercise.count if exercise else 0
-            exercise_type = exercise.type if exercise else "squat"
-            mirror_message = "Keep the movement steady and prioritize posture over speed."
-            return CoachingResponse(
-                summary=f"Completed {count} reps. This feedback is based on posture stability and baseline diff.",
-                priority="posture stability",
-                routine=[
-                    RoutineItem(
-                        title="Check alignment",
-                        description="Match your knees with your feet and slow down the next set.",
-                    )
-                ],
-                exercise_plan=[
-                    ExercisePlanItem(
-                        exercise=exercise_type,
-                        sets=3,
-                        reps=max(4, count if count else 6),
-                        rest_sec=60,
-                        focus="controlled posture",
-                        reason="Local mock coaching is active, so PC3 returns a safe default plan.",
-                    )
-                ],
-                mirror_message=mirror_message,
-                warnings=["Stop exercising if you feel pain."],
-                pc2_payload=PC2Payload(
-                    message=mirror_message,
-                    display_lines=["posture first", "steady tempo"],
-                ),
-            )
-
-        if payload.mode == "grooming":
-            return CoachingResponse(
-                summary="Grooming check completed from face brightness and tone features.",
-                priority="lighting balance",
-                routine=[
-                    RoutineItem(
-                        title="Check lighting",
-                        description="Use even front lighting before making grooming decisions.",
-                    )
-                ],
-                mirror_message="This is a visual check, not a medical diagnosis.",
-                warnings=["Adjust products or shaving only if irritation is visible to you."],
-            )
-
-        if payload.mode == "outfit":
-            return CoachingResponse(
-                summary="Outfit color and contrast check completed.",
-                priority="color balance",
-                routine=[
-                    RoutineItem(
-                        title="Balance contrast",
-                        description="If the top and bottom contrast is too strong, add a neutral layer.",
-                    )
-                ],
-                mirror_message="Confirm the outfit once more under the actual destination lighting.",
-                warnings=["Color analysis can change under different lighting."],
-            )
-
+        exercise = payload.features.exercise
+        count = exercise.count if exercise else 0
+        exercise_type = exercise.type if exercise else "squat"
+        mirror_message = "Keep the movement steady and prioritize posture over speed."
         return CoachingResponse(
-            summary="Outing check completed from face, outfit, and room environment features.",
-            priority="final purpose fit",
+            summary=f"Completed {count} reps. This feedback is based on posture stability and baseline diff.",
+            priority="posture stability",
             routine=[
                 RoutineItem(
-                    title="Final check",
-                    description="Review color balance and lighting before leaving.",
+                    title="Check alignment",
+                    description="Match your knees with your feet and slow down the next set.",
                 )
             ],
-            mirror_message="The result only uses extracted features, not raw images.",
-            warnings=["PC3 does not infer details that are not visible in the input frame."],
+            exercise_plan=[
+                ExercisePlanItem(
+                    exercise=exercise_type,
+                    sets=3,
+                    reps=max(4, count if count else 6),
+                    rest_sec=60,
+                    focus="controlled posture",
+                    reason="Local mock coaching is active, so PC3 returns a safe default plan.",
+                )
+            ],
+            mirror_message=mirror_message,
+            warnings=["Stop exercising if you feel pain."],
+            pc2_payload=PC2Payload(
+                message=mirror_message,
+                display_lines=["posture first", "steady tempo"],
+            ),
         )

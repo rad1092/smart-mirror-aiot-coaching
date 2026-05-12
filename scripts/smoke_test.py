@@ -10,8 +10,7 @@ import numpy as np
 
 def make_image_bytes() -> bytes:
     image = np.zeros((240, 240, 3), dtype=np.uint8)
-    image[:] = (120, 120, 120)
-    image[40:132, 72:168] = (120, 105, 150)
+    image[:] = (130, 120, 110)
     image[84:132, 72:168] = (80, 48, 35)
     image[132:204, 72:168] = (20, 20, 20)
     ok, encoded = cv2.imencode(".jpg", image)
@@ -20,20 +19,19 @@ def make_image_bytes() -> bytes:
     return encoded.tobytes()
 
 
-def start_session(
+def start_exercise_session(
     client: httpx.Client,
     base_url: str,
-    mode: str,
-    goal: str | None = None,
-    user_id: str = "default",
+    goal: str = "squat",
+    user_id: str = "smoke_user",
 ) -> str:
-    payload: dict[str, str] = {"user_id": user_id, "mode": mode}
-    if goal:
-        payload["goal"] = goal
-    response = client.post(f"{base_url}/api/sessions/start", json=payload)
+    response = client.post(
+        f"{base_url}/api/sessions/start",
+        json={"user_id": user_id, "mode": "exercise", "goal": goal},
+    )
     response.raise_for_status()
     session_id = response.json()["session_id"]
-    print(f"[OK] session start {mode}: {session_id}")
+    print(f"[OK] exercise session start: {session_id}")
     return session_id
 
 
@@ -43,13 +41,9 @@ def upload_image(
     endpoint: str,
     session_id: str,
     image_bytes: bytes,
-    extra_data: dict[str, str] | None = None,
 ) -> httpx.Response:
-    data = {"session_id": session_id}
-    if extra_data:
-        data.update(extra_data)
     files = {"file": ("smoke.jpg", BytesIO(image_bytes), "image/jpeg")}
-    response = client.post(f"{base_url}{endpoint}", data=data, files=files)
+    response = client.post(f"{base_url}{endpoint}", data={"session_id": session_id}, files=files)
     response.raise_for_status()
     return response
 
@@ -57,7 +51,7 @@ def upload_image(
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Smoke test an already running PC3 server. "
+            "Smoke test an already running exercise-only PC3 server. "
             "This script does not start the server and does not write image files."
         )
     )
@@ -79,36 +73,17 @@ def main() -> int:
         print(f"[OK] sensors/update: {sensor.json()['environment']}")
 
         baseline_user_id = "smoke_user"
-        default_baseline = client.get(f"{base_url}/api/baselines/users/{baseline_user_id}")
-        default_baseline.raise_for_status()
-        print(f"[OK] baseline default source: {default_baseline.json()['source']}")
-
         saved_baseline = client.post(
-            f"{base_url}/api/baselines/users/{baseline_user_id}",
-            json={
-                "exercise": {
-                    "squat": {
-                        "avg_count": 4,
-                        "avg_stability_score": 0.7,
-                    }
-                },
-                "face": {
-                    "brightness": 0.55,
-                    "redness": 0.2,
-                    "beard_shadow": 0.35,
-                },
-                "outfit": {
-                    "preferred_tones": ["navy"],
-                    "preferred_colors": ["navy", "white"],
-                },
-            },
+            f"{base_url}/api/baselines/users/{baseline_user_id}/capture",
+            data={"slot_type": "face_front"},
+            files={"file": ("smoke.jpg", BytesIO(image_bytes), "image/jpeg")},
         )
         saved_baseline.raise_for_status()
-        if saved_baseline.json()["source"] != "user":
-            raise RuntimeError("user baseline should be stored with source=user")
-        print("[OK] baseline upsert source: user")
+        if not saved_baseline.json()["valid"]:
+            raise RuntimeError("face_front baseline capture should be valid for the smoke image")
+        print("[OK] baseline capture face_front")
 
-        exercise_session = start_session(client, base_url, "exercise", "squat", baseline_user_id)
+        exercise_session = start_exercise_session(client, base_url, "squat", baseline_user_id)
         exercise = upload_image(
             client,
             base_url,
@@ -118,8 +93,8 @@ def main() -> int:
         )
         exercise_body = exercise.json()
         if "coaching" in exercise_body:
-            raise RuntimeError("exercise frame_update must not return coaching")
-        print(f"[OK] analyze/exercise frame_update: {exercise_body['exercise']}")
+            raise RuntimeError("exercise frame update must not return coaching")
+        print(f"[OK] analyze/exercise frame update: {exercise_body['exercise']}")
 
         stop = client.post(f"{base_url}/api/sessions/{exercise_session}/stop")
         stop.raise_for_status()
@@ -128,30 +103,14 @@ def main() -> int:
             raise RuntimeError("exercise session stop should return coaching in mock mode")
         print("[OK] exercise session stop returns coaching")
 
-        for mode, endpoint in [
-            ("grooming", "/api/analyze/grooming"),
-            ("outfit", "/api/analyze/outfit"),
-            ("outing", "/api/analyze/outing"),
-        ]:
-            session_id = start_session(client, base_url, mode)
-            extra = {"purpose": "daily"} if mode in {"outfit", "outing"} else None
-            response = upload_image(client, base_url, endpoint, session_id, image_bytes, extra)
-            body = response.json()
-            print(
-                f"[OK] {endpoint}: "
-                f"features={bool(body.get('features'))}, "
-                f"environment={bool(body.get('environment'))}, "
-                f"coaching={bool(body.get('coaching'))}"
-            )
-
-        mismatch = client.post(
+        removed = client.post(
             f"{base_url}/api/analyze/grooming",
             data={"session_id": exercise_session},
             files={"file": ("smoke.jpg", BytesIO(image_bytes), "image/jpeg")},
         )
-        if mismatch.status_code != 400:
-            raise RuntimeError(f"Expected mode mismatch 400, got {mismatch.status_code}")
-        print("[OK] mode mismatch returns 400")
+        if removed.status_code != 404:
+            raise RuntimeError(f"Expected removed grooming endpoint 404, got {removed.status_code}")
+        print("[OK] removed non-exercise analyze endpoints are unavailable")
 
     return 0
 

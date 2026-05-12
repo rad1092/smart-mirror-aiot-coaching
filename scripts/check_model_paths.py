@@ -8,8 +8,6 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULTS = {
     "USE_MEDIAPIPE_TASKS": "false",
     "POSE_MODEL_PATH": "./models/pose/pose_landmarker_lite.task",
-    "FACE_MODEL_PATH": "",
-    "SEGMENTER_MODEL_PATH": "",
 }
 
 
@@ -45,10 +43,9 @@ def truthy(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def check_path(label: str, value: str, optional: bool = False) -> bool:
+def check_path(label: str, value: str) -> bool:
     if not value:
-        level = "WARN" if optional else "INFO"
-        print(f"[{level}] {label} model path not set; skipped")
+        print(f"[INFO] {label} model path not set; skipped")
         return False
     resolved = resolve_model_path(value)
     if resolved.exists():
@@ -72,9 +69,7 @@ def main() -> int:
     print(f"Checking model paths using env file: {env_path}")
     print(f"USE_MEDIAPIPE_TASKS={str(use_tasks).lower()}")
 
-    pose_ok = check_path("pose", settings["POSE_MODEL_PATH"], optional=False)
-    check_path("face", settings["FACE_MODEL_PATH"], optional=True)
-    check_path("segmenter", settings["SEGMENTER_MODEL_PATH"], optional=True)
+    pose_ok = check_path("pose", settings["POSE_MODEL_PATH"])
 
     if use_tasks and not pose_ok:
         print("[WARN] USE_MEDIAPIPE_TASKS=true but pose model is missing.")

@@ -13,9 +13,6 @@ from app.schemas.sensor import EnvironmentFeature
 
 class SessionMode(str, Enum):
     exercise = "exercise"
-    grooming = "grooming"
-    outfit = "outfit"
-    outing = "outing"
 
 
 class SessionStatus(str, Enum):

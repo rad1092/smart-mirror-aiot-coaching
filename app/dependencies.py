@@ -8,8 +8,6 @@ from app.llm_client.coach_client import CoachClient
 from app.sensors.sensor_service import SensorService
 from app.storage.memory_store import MemoryStore
 from app.triggers.trigger_engine import TriggerEngine
-from app.vision.face_analyzer import FaceAnalyzer
-from app.vision.outfit_color_analyzer import OutfitColorAnalyzer
 from app.vision.pose_analyzer import PoseAnalyzer
 
 
@@ -31,13 +29,6 @@ pose_analyzer = PoseAnalyzer(
     exercise_rules_path=settings.resolve_path(settings.exercise_rules_path),
     use_mediapipe_tasks=settings.use_mediapipe_tasks,
 )
-face_analyzer = FaceAnalyzer(settings.resolve_path(settings.config_face_thresholds))
-outfit_analyzer = OutfitColorAnalyzer(
-    thresholds_path=settings.resolve_path(settings.config_outfit_thresholds),
-    color_rules_path=settings.resolve_path(settings.color_rules_path),
-)
-
-
 def get_store() -> MemoryStore:
     return store
 
@@ -64,11 +55,3 @@ def get_feature_builder() -> FeatureBuilder:
 
 def get_pose_analyzer() -> PoseAnalyzer:
     return pose_analyzer
-
-
-def get_face_analyzer() -> FaceAnalyzer:
-    return face_analyzer
-
-
-def get_outfit_analyzer() -> OutfitColorAnalyzer:
-    return outfit_analyzer

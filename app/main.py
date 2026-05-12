@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 settings = get_settings()
 app = FastAPI(
     title="PC3 Vision Gateway",
-    description="Vision and sensor gateway for smart mirror AIoT coaching.",
+    description="Exercise-only vision and sensor gateway for smart mirror AIoT coaching.",
     version="0.1.0",
 )
 app.add_middleware(
