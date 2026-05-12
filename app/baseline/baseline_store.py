@@ -75,7 +75,8 @@ class BaselineStore:
 
     def upsert_baseline(self, user_id: str, baseline_updates: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
-            merged = self._merge_baseline(self._default_data, baseline_updates)
+            base = self._get_user_baseline(user_id) or self._default_data
+            merged = self._merge_baseline(base, baseline_updates)
             merged["user_id"] = user_id
             if self._database_path is None:
                 self._memory_baselines[user_id] = merged

@@ -38,3 +38,9 @@ class BaselineResponse(BaseModel):
 
 class BaselineUpsertResponse(BaselineResponse):
     status: Literal["saved"] = "saved"
+
+
+class BaselineCaptureResponse(BaseModel):
+    valid: bool
+    slot_type: str
+    reason: str | None = None

@@ -323,3 +323,32 @@ class PoseAnalyzer:
 
     def _back_lean_threshold(self) -> float:
         return float(self._posture_thresholds().get("back_leaning_forward_degrees", 25))
+
+    def extract_body_proportions(self, frame) -> dict[str, float] | None:
+        landmarks = self._detect_landmarks(frame)
+        if landmarks is None:
+            return None
+        if not self._landmarks_are_confident(landmarks):
+            return None
+
+        try:
+            left_shoulder = self._landmark(landmarks, "LEFT", "SHOULDER")
+            right_shoulder = self._landmark(landmarks, "RIGHT", "SHOULDER")
+            left_hip = self._landmark(landmarks, "LEFT", "HIP")
+            right_hip = self._landmark(landmarks, "RIGHT", "HIP")
+            left_ankle = self._landmark(landmarks, "LEFT", "ANKLE")
+            right_ankle = self._landmark(landmarks, "RIGHT", "ANKLE")
+
+            shoulder_width = round(abs(right_shoulder.x - left_shoulder.x), 4)
+            hip_width = round(abs(right_hip.x - left_hip.x), 4)
+            shoulder_mid_y = (left_shoulder.y + right_shoulder.y) / 2
+            ankle_mid_y = (left_ankle.y + right_ankle.y) / 2
+            body_height = round(abs(ankle_mid_y - shoulder_mid_y), 4)
+            return {
+                "shoulder_width": shoulder_width,
+                "hip_width": hip_width,
+                "body_height": body_height,
+            }
+        except Exception:
+            logger.exception("Failed to extract body proportions from landmarks.")
+            return None

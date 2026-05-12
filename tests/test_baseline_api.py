@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.dependencies import get_pose_analyzer
+
 
 def test_get_unknown_user_baseline_returns_default(client):
     response = client.get("/api/baselines/users/unknown_user")
@@ -44,3 +46,47 @@ def test_upsert_and_get_user_baseline(client):
     assert loaded["baseline"]["exercise"]["squat"]["avg_count"] == 7
     assert loaded["baseline"]["face"]["brightness"] == 0.55
     assert loaded["baseline"]["outfit"]["preferred_colors"] == ["navy", "white"]
+
+
+def test_capture_baseline_slot_saves_body_checkpoint(client, image_bytes):
+    class FallbackPoseAnalyzer:
+        use_mediapipe = False
+
+    client.app.dependency_overrides[get_pose_analyzer] = lambda: FallbackPoseAnalyzer()
+    try:
+        response = client.post(
+            "/api/baselines/users/capture_user/capture",
+            data={"slot_type": "body_front_full"},
+            files={"file": ("body.jpg", image_bytes, "image/jpeg")},
+        )
+    finally:
+        client.app.dependency_overrides.pop(get_pose_analyzer, None)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["valid"] is True
+    assert body["slot_type"] == "body_front_full"
+
+    baseline = client.get("/api/baselines/users/capture_user").json()
+    assert baseline["source"] == "user"
+    assert baseline["baseline"]["body"]["body_front_full"]["captured"] is True
+
+
+def test_capture_baseline_rejects_unknown_slot(client, image_bytes):
+    response = client.post(
+        "/api/baselines/users/capture_user/capture",
+        data={"slot_type": "sideways"},
+        files={"file": ("body.jpg", image_bytes, "image/jpeg")},
+    )
+
+    assert response.status_code == 400
+
+
+def test_capture_baseline_rejects_invalid_image(client):
+    response = client.post(
+        "/api/baselines/users/capture_user/capture",
+        data={"slot_type": "face_front"},
+        files={"file": ("broken.jpg", b"not an image", "image/jpeg")},
+    )
+
+    assert response.status_code == 400

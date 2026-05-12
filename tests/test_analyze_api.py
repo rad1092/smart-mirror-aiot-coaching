@@ -75,6 +75,8 @@ def test_exercise_websocket_gate_broadcasts_update_and_stop_returns_coaching(cli
         assert message["session_id"] == session_id
         assert message["count"] == frame_body["exercise"]["count"]
         assert message["state"] == frame_body["exercise"]["state"]
+        assert message["posture_errors"] == frame_body["exercise"]["posture_errors"]
+        assert message["stability_score"] == frame_body["exercise"]["stability_score"]
         assert _has_no_mojibake(message["feedback"])
 
     stop = client.post(f"/api/sessions/{session_id}/stop")
@@ -82,6 +84,22 @@ def test_exercise_websocket_gate_broadcasts_update_and_stop_returns_coaching(cli
     stop_body = stop.json()
     assert stop_body["coaching"] is not None
     assert stop_body["features"]["exercise"] is not None
+
+
+def test_exercise_session_goal_sets_final_exercise_type(client):
+    session_response = client.post(
+        "/api/sessions/start",
+        json={"user_id": "default", "mode": "exercise", "goal": "pushup"},
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["session_id"]
+
+    stop = client.post(f"/api/sessions/{session_id}/stop")
+
+    assert stop.status_code == 200
+    body = stop.json()
+    assert body["features"]["exercise"]["type"] == "pushup"
+    assert body["coaching"]["exercise_plan"][0]["exercise"] == "pushup"
 
 
 def test_grooming_analyze_returns_face_features_and_coaching(client, image_bytes):

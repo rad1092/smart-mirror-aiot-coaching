@@ -12,6 +12,8 @@ from app.dependencies import (
     get_store,
     get_trigger_engine,
 )
+from app.exercise_types import normalize_exercise_type
+from app.schemas.feature import ExerciseFeature
 from app.features.feature_builder import FeatureBuilder
 from app.llm_client.coach_client import CoachClient
 from app.schemas.session import (
@@ -70,6 +72,12 @@ async def stop_session(
         raise HTTPException(status_code=404, detail="Session not found")
 
     features = store.get_features(session_id)
+    if stopped_session.mode.value == "exercise":
+        exercise_type = normalize_exercise_type(stopped_session.goal)
+        if features.exercise is None:
+            features.exercise = ExerciseFeature(type=exercise_type)
+        else:
+            features.exercise = features.exercise.model_copy(update={"type": exercise_type})
     payload = feature_builder.build_payload(
         stopped_session,
         event="session_completed",

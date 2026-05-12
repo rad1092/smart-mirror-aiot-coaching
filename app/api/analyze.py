@@ -11,6 +11,7 @@ from app.dependencies import (
     get_store,
     get_trigger_engine,
 )
+from app.exercise_types import normalize_exercise_type
 from app.features.feature_builder import FeatureBuilder
 from app.llm_client.coach_client import CoachClient
 from app.schemas.feature import (
@@ -88,10 +89,11 @@ async def analyze_exercise(
     store: MemoryStore = Depends(get_store),
     pose_analyzer: PoseAnalyzer = Depends(get_pose_analyzer),
 ) -> ExerciseAnalyzeResponse:
-    _session_for_mode(session_id, "exercise", store)
+    session = _session_for_mode(session_id, "exercise", store)
     frame = await _decode_upload(file)
     previous = store.get_features(session_id).exercise
     exercise, feedback = pose_analyzer.analyze(frame, previous)
+    exercise = exercise.model_copy(update={"type": normalize_exercise_type(session.goal)})
     store.set_exercise_feature(session_id, exercise)
     message = {
         "type": "exercise_update",
@@ -99,6 +101,8 @@ async def analyze_exercise(
         "count": exercise.count,
         "state": exercise.state,
         "feedback": feedback,
+        "posture_errors": exercise.posture_errors,
+        "stability_score": exercise.stability_score,
     }
     await manager.broadcast(session_id, message)
     return ExerciseAnalyzeResponse(
