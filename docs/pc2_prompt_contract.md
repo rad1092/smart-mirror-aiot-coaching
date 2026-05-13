@@ -40,19 +40,32 @@ PC3 sends this to `POST /api/routine/profile` before exercise:
 ```json
 {
   "user_id": "profile_1",
-  "user_goal": "lower body strength",
-  "exercise_experience": "beginner",
+  "user_goal": "하체 강화",
+  "exercise_experience": "초보",
   "available_days_per_week": 4,
-  "restricted_body_parts": ["knee"],
+  "restricted_body_parts": ["무릎"],
   "purpose": "pre_exercise_routine",
   "profile_name": "Mirror User",
-  "weight_kg": 70
+  "weight_kg": 70,
+  "start_date": "2026-05-13"
 }
 ```
 
-PC2 should return a routine profile response with `summary`, `weekly_focus`,
-`weekly_routine`, and optional `cautions`. PC3 will flatten the weekly routine
-into PC1 recommendation items.
+PC2 should return `summary`, `weekly_focus`, `weekly_routine`, optional
+`cautions`, and `pc3_payload` schedule metadata. Each routine exercise should
+include `exercise`, `sets`, `reps` or `duration_sec`, `rest_sec`, `focus`,
+`reason`, `how_to`, and `tips`. PC3 flattens the first valid exercises into PC1
+recommendation items while preserving the full weekly routine for newer PC1
+views.
+
+PC3 also calls this date-based routine endpoint:
+
+```http
+GET /api/routine/profile/{user_id}/day?target_date=YYYY-MM-DD
+```
+
+The response should include the selected day, `exercises`, `summary`,
+`weekly_focus`, and a display `message`.
 
 ## Exercise Feature Request
 

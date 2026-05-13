@@ -86,13 +86,31 @@ PC1 sends its existing `RecommendationRequestPayload` shape:
       "body_right_full",
       "body_left_full"
     ]
-  }
+  },
+  "start_date": "2026-05-13",
+  "purpose": "pre_exercise_routine"
 }
 ```
 
 PC3 validates required profile fields and confirms the saved PC3 baseline has
 all required user-source slots. PC3 then calls PC2 `/api/routine/profile` with a
 sanitized payload.
+
+PC3 also accepts the newer flat routine request shape:
+
+```json
+{
+  "user_id": "profile_1",
+  "profile_name": "Mirror User",
+  "weight_kg": 70,
+  "user_goal": "운동 습관 만들기",
+  "exercise_experience": "초보",
+  "available_days_per_week": 5,
+  "restricted_body_parts": ["무릎"],
+  "start_date": "2026-05-13",
+  "purpose": "profile weekly routine"
+}
+```
 
 PC3 response shape is PC1 `RecommendationResponsePayload`:
 
@@ -112,7 +130,34 @@ PC3 response shape is PC1 `RecommendationResponsePayload`:
       "reps": 8,
       "rest_sec": 60,
       "focus": "controlled posture",
-      "summary": "Build stable lower-body movement."
+      "summary": "Build stable lower-body movement.",
+      "sets": 3,
+      "reason": "Practice stable knee tracking.",
+      "how_to": "Stand tall, sit the hips back, then press through the feet.",
+      "tips": "Keep knees tracking over toes."
+    }
+  ],
+  "routine_id": "routine_abcd1234",
+  "start_date": "2026-05-13",
+  "scheduled_dates": ["2026-05-13", "2026-05-14"],
+  "weekly_routine": [
+    {
+      "day_index": 1,
+      "day_label": "Day 1",
+      "focus": "lower body control",
+      "exercises": [
+        {
+          "exercise": "squat",
+          "sets": 3,
+          "reps": 8,
+          "duration_sec": null,
+          "rest_sec": 60,
+          "focus": "controlled posture",
+          "reason": "Practice stable knee tracking.",
+          "how_to": "Stand tall, sit the hips back, then press through the feet.",
+          "tips": "Keep knees tracking over toes."
+        }
+      ]
     }
   ]
 }
@@ -121,7 +166,45 @@ PC3 response shape is PC1 `RecommendationResponsePayload`:
 If PC2 fails, PC3 returns `source="basic"` with a local fallback routine that PC1
 can still render and start.
 
-## 3. Exercise Session
+## 3. Date-Based Routine Lookup
+
+```http
+GET /api/routines/profile/{user_id}/day?target_date=YYYY-MM-DD
+```
+
+PC3 proxies the request to PC2 `/api/routine/profile/{user_id}/day` and returns
+the selected day's routine:
+
+```json
+{
+  "routine_id": "routine_abcd1234",
+  "user_id": "profile_1",
+  "scheduled_date": "2026-05-14",
+  "day_index": 2,
+  "day_label": "Day 2",
+  "focus": "upper body support",
+  "exercises": [
+    {
+      "exercise": "pushup",
+      "sets": 3,
+      "reps": 8,
+      "duration_sec": null,
+      "rest_sec": 60,
+      "focus": "body line",
+      "reason": "Build upper support.",
+      "how_to": "Lower and press while keeping one straight body line.",
+      "tips": "Brace the core."
+    }
+  ],
+  "summary": "Weekly routine",
+  "weekly_focus": "Consistency",
+  "message": "Today is pushup day."
+}
+```
+
+PC2 404 is returned as 404. PC2 connection failures return 503.
+
+## 4. Exercise Session
 
 Start:
 
@@ -150,7 +233,7 @@ Supported `goal` values:
 
 Response includes a `ws_url` for realtime updates.
 
-## 4. Realtime and Frame Analysis
+## 5. Realtime and Frame Analysis
 
 WebSocket:
 
@@ -194,7 +277,7 @@ Example WebSocket update:
 }
 ```
 
-## 5. Stop Session
+## 6. Stop Session
 
 ```http
 POST /api/sessions/{session_id}/stop

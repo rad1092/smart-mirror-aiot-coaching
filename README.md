@@ -38,6 +38,7 @@ uv run --with-requirements requirements.txt python -m uvicorn app.main:app --hos
 ```env
 PC2_COACH_API_URL=http://localhost:7000/api/coach/generate
 PC2_ROUTINE_API_URL=http://localhost:7000/api/routine/profile
+PC2_ROUTINE_DAY_API_URL=http://localhost:7000/api/routine/profile/{user_id}/day
 MOCK_LLM=true
 HOST=127.0.0.1
 PORT=9000
@@ -104,9 +105,20 @@ user-source slots:
 - `body_right_full`
 - `body_left_full`
 
-PC3 then calls PC2 `POST /api/routine/profile` with a sanitized routine request.
-If PC2 is unavailable, PC3 returns a PC1-renderable basic fallback response with
-`source="basic"` and a reason that PC2 was unavailable.
+PC3 also accepts the newer flat routine request documented by PC2, including
+optional `start_date`. PC3 then calls PC2 `POST /api/routine/profile` with a
+sanitized request, preserves PC2 schedule metadata (`routine_id`, `start_date`,
+`scheduled_dates`) and detailed routine instructions (`how_to`, `tips`), and
+still returns the existing PC1 `items` preview. If PC2 is unavailable, PC3
+returns a PC1-renderable basic fallback response with `source="basic"` and a
+reason that PC2 was unavailable.
+
+```http
+GET /api/routines/profile/{user_id}/day?target_date=YYYY-MM-DD
+```
+
+PC3 proxies this to PC2 for date-based routine lookup and preserves the selected
+day's `message`, `exercises`, `how_to`, and `tips`.
 
 ### Exercise Session
 
@@ -132,9 +144,10 @@ allowed by the PC2 payload contract.
 
 ## PC2 APIs
 
-PC3 uses two PC2 endpoints:
+PC3 uses these PC2 endpoints:
 
 - `POST /api/routine/profile` before exercise, for routine planning.
+- `GET /api/routine/profile/{user_id}/day` for date-based routine lookup.
 - `POST /api/coach/generate` after exercise, for session result coaching.
 
 Post-exercise PC2 requests are `exercise/session_completed` only. Routine

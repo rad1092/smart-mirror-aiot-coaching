@@ -1,13 +1,22 @@
 from __future__ import annotations
 
+from datetime import date
 import logging
+from urllib.parse import quote
 
 import httpx
 
 from app.config import Settings
 from app.schemas.coaching import CoachingResponse, ExercisePlanItem, PC2Payload, RoutineItem
 from app.schemas.feature import FeaturePayload
-from app.schemas.routine import RecommendationRequest, RecommendationResponse, RoutineItemPayload
+from app.schemas.routine import (
+    RecommendationRequest,
+    RecommendationResponse,
+    RoutineDayResponse,
+    RoutineItemPayload,
+    WeeklyRoutineDayPayload,
+    WeeklyRoutineExercisePayload,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -35,12 +44,37 @@ PC2_BASELINE_DIFF_FIELDS = {
     "duration_change",
 }
 SUPPORTED_ROUTINE_EXERCISES = {"squat", "jumping_jack", "knee_raise", "lunge", "pushup"}
+ROUTINE_EXERCISE_ALIASES = {
+    "squat": "squat",
+    "jumping_jack": "jumping_jack",
+    "jumping jack": "jumping_jack",
+    "jumping-jack": "jumping_jack",
+    "knee_raise": "knee_raise",
+    "knee raise": "knee_raise",
+    "knee-raise": "knee_raise",
+    "lunge": "lunge",
+    "pushup": "pushup",
+    "push up": "pushup",
+    "push-up": "pushup",
+    "push_up": "pushup",
+}
 GOAL_LABELS = {
-    "build_stamina": "build stamina",
-    "posture_correction": "posture correction",
-    "lower_body_strength": "lower body strength",
-    "build_habit": "build an exercise habit",
-    "weight_management": "weight management",
+    "build_stamina": "체력 올리기",
+    "posture_correction": "자세 교정",
+    "lower_body_strength": "하체 강화",
+    "build_habit": "운동 습관 만들기",
+    "weight_management": "체중 관리",
+}
+EXPERIENCE_LABELS = {
+    "beginner": "초보",
+    "casual": "가벼운 운동",
+    "consistent": "꾸준한 운동",
+}
+LIMITATION_LABELS = {
+    "knee": "무릎",
+    "back": "허리",
+    "shoulder": "어깨",
+    "ankle": "발목",
 }
 WEEKLY_FREQUENCY_TO_DAYS = {
     "once_twice": 2,
@@ -91,6 +125,16 @@ class CoachClient:
         except Exception:
             logger.exception("PC2 routine API call failed. Falling back to local basic routine.")
             return self._routine_fallback_response(request, "PC2 unavailable. Using a local basic routine.")
+
+    async def get_routine_day(self, user_id: str, target_date: date) -> RoutineDayResponse:
+        url = self._routine_day_url(user_id, target_date)
+        params = None if "{target_date}" in self._settings.pc2_routine_day_api_url else {
+            "target_date": target_date.isoformat()
+        }
+        async with httpx.AsyncClient(timeout=self._settings.pc2_timeout_seconds) as client:
+            response = await client.get(url, params=params)
+            response.raise_for_status()
+        return self.pc2_routine_day_response_to_pc1(response.json())
 
     def measurement_quality_response(self, payload: FeaturePayload, quality: dict) -> CoachingResponse:
         exercise = payload.features.exercise
@@ -167,16 +211,25 @@ class CoachClient:
         self._validate_routine_profile(profile)
         payload: dict = {
             "user_id": request.user_id,
-            "user_goal": GOAL_LABELS[profile.goal],
-            "exercise_experience": profile.experience_level,
-            "available_days_per_week": WEEKLY_FREQUENCY_TO_DAYS[profile.weekly_frequency],
-            "restricted_body_parts": list(profile.limitations),
-            "purpose": "pre_exercise_routine",
+            "user_goal": request.pc2_user_goal or GOAL_LABELS[profile.goal],
+            "exercise_experience": request.pc2_exercise_experience or EXPERIENCE_LABELS[profile.experience_level],
+            "available_days_per_week": (
+                request.pc2_available_days_per_week
+                or WEEKLY_FREQUENCY_TO_DAYS[profile.weekly_frequency]
+            ),
+            "restricted_body_parts": (
+                list(request.pc2_restricted_body_parts)
+                if request.pc2_restricted_body_parts
+                else [LIMITATION_LABELS[item] for item in profile.limitations]
+            ),
+            "purpose": request.purpose or "pre_exercise_routine",
         }
         if profile.name:
             payload["profile_name"] = profile.name
         if profile.weight_kg is not None:
             payload["weight_kg"] = profile.weight_kg
+        if request.start_date is not None:
+            payload["start_date"] = request.start_date.isoformat()
         return payload
 
     def pc2_routine_response_to_recommendation(
@@ -186,21 +239,27 @@ class CoachClient:
     ) -> RecommendationResponse:
         difficulty = self._difficulty_from_profile(request)
         items: list[RoutineItemPayload] = []
-        for day in response_json.get("weekly_routine", []):
-            for exercise in day.get("exercises", []):
-                exercise_type = self._normalize_routine_exercise(exercise.get("exercise"))
-                if exercise_type is None:
-                    continue
-                reps = exercise.get("reps") or self._duration_to_reps(exercise.get("duration_sec"))
-                rest_sec = exercise.get("rest_sec")
+        pc3_payload = response_json.get("pc3_payload") if isinstance(response_json.get("pc3_payload"), dict) else {}
+        weekly_routine = self._normalize_weekly_routine(
+            response_json.get("weekly_routine") or pc3_payload.get("weekly_routine")
+        )
+        for day in weekly_routine:
+            for exercise in day.exercises:
+                reps = exercise.reps or self._duration_to_reps(exercise.duration_sec)
+                rest_sec = exercise.rest_sec
                 items.append(
                     RoutineItemPayload(
-                        exercise_type=exercise_type,
-                        title=f"{day.get('day_label') or 'Routine'} - {exercise_type.replace('_', ' ')}",
+                        exercise_type=exercise.exercise,
+                        title=f"{day.day_label or 'Routine'} - {exercise.exercise.replace('_', ' ')}",
                         reps=max(1, int(reps or 8)),
                         rest_sec=max(0, int(rest_sec if rest_sec is not None else 60)),
-                        focus=str(exercise.get("focus") or day.get("focus") or "controlled posture"),
-                        summary=str(exercise.get("reason") or day.get("focus") or response_json.get("weekly_focus") or ""),
+                        focus=exercise.focus or day.focus or "controlled posture",
+                        summary=exercise.reason or day.focus or response_json.get("weekly_focus") or "",
+                        sets=exercise.sets,
+                        duration_sec=exercise.duration_sec,
+                        reason=exercise.reason,
+                        how_to=exercise.how_to,
+                        tips=exercise.tips,
                     )
                 )
                 if len(items) >= 3:
@@ -223,6 +282,26 @@ class CoachClient:
             estimated_minutes=self._estimate_minutes(items),
             start_exercise_type=items[0].exercise_type,
             items=items,
+            routine_id=pc3_payload.get("routine_id") or response_json.get("routine_id"),
+            start_date=pc3_payload.get("start_date") or response_json.get("start_date"),
+            scheduled_dates=list(pc3_payload.get("scheduled_dates") or response_json.get("scheduled_dates") or []),
+            weekly_routine=weekly_routine,
+        )
+
+    def pc2_routine_day_response_to_pc1(self, response_json: dict) -> RoutineDayResponse:
+        exercises = self._normalize_weekly_exercises(response_json.get("exercises"))
+        return RoutineDayResponse(
+            routine_id=str(response_json.get("routine_id") or ""),
+            user_id=str(response_json.get("user_id") or ""),
+            scheduled_date=str(response_json.get("scheduled_date") or ""),
+            day_index=int(response_json.get("day_index") or 1),
+            day_label=str(response_json.get("day_label") or "Day 1"),
+            focus=str(response_json.get("focus") or "controlled posture"),
+            exercises=exercises,
+            summary=str(response_json.get("summary") or ""),
+            weekly_focus=str(response_json.get("weekly_focus") or ""),
+            message=str(response_json.get("message") or ""),
+            created_at=response_json.get("created_at"),
         )
 
     def _dump_pc2_exercise(self, exercise) -> dict:
@@ -236,6 +315,59 @@ class CoachClient:
             if key in PC2_BASELINE_DIFF_FIELDS and value is not None
         }
 
+    def _routine_day_url(self, user_id: str, target_date: date) -> str:
+        return self._settings.pc2_routine_day_api_url.format(
+            user_id=quote(user_id, safe=""),
+            target_date=target_date.isoformat(),
+        )
+
+    def _normalize_weekly_routine(self, value) -> list[WeeklyRoutineDayPayload]:
+        if not isinstance(value, list):
+            return []
+
+        days: list[WeeklyRoutineDayPayload] = []
+        for index, day in enumerate(value, start=1):
+            if not isinstance(day, dict):
+                continue
+            exercises = self._normalize_weekly_exercises(day.get("exercises"))
+            if not exercises:
+                continue
+            days.append(
+                WeeklyRoutineDayPayload(
+                    day_index=int(day.get("day_index") or index),
+                    day_label=str(day.get("day_label") or f"Day {index}"),
+                    focus=str(day.get("focus") or "controlled posture"),
+                    exercises=exercises,
+                )
+            )
+        return days
+
+    def _normalize_weekly_exercises(self, value) -> list[WeeklyRoutineExercisePayload]:
+        if not isinstance(value, list):
+            return []
+
+        exercises: list[WeeklyRoutineExercisePayload] = []
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            exercise_type = self._normalize_routine_exercise(item.get("exercise"))
+            if exercise_type is None:
+                continue
+            exercises.append(
+                WeeklyRoutineExercisePayload(
+                    exercise=exercise_type,
+                    sets=self._optional_int(item.get("sets")),
+                    reps=self._optional_int(item.get("reps")),
+                    duration_sec=self._optional_int(item.get("duration_sec")),
+                    rest_sec=self._optional_int(item.get("rest_sec")),
+                    focus=str(item.get("focus") or "controlled posture"),
+                    reason=str(item.get("reason") or ""),
+                    how_to=str(item.get("how_to") or ""),
+                    tips=str(item.get("tips") or ""),
+                )
+            )
+        return exercises
+
     def _validate_routine_profile(self, profile) -> None:
         missing = []
         if profile.goal is None:
@@ -244,10 +376,6 @@ class CoachClient:
             missing.append("profile.experience_level")
         if profile.weekly_frequency is None:
             missing.append("profile.weekly_frequency")
-        if profile.weight_kg is None:
-            missing.append("profile.weight_kg")
-        if profile.height_cm is None:
-            missing.append("profile.height_cm")
         if missing:
             raise ValueError("Missing routine profile fields: " + ", ".join(missing))
 
@@ -286,9 +414,12 @@ class CoachClient:
         )
 
     def _normalize_routine_exercise(self, value) -> str | None:
-        raw = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
-        if raw in SUPPORTED_ROUTINE_EXERCISES:
-            return raw
+        raw_label = str(value or "").strip().lower()
+        if raw_label in ROUTINE_EXERCISE_ALIASES:
+            return ROUTINE_EXERCISE_ALIASES[raw_label]
+        raw = raw_label.replace("-", "_").replace(" ", "_")
+        if raw in ROUTINE_EXERCISE_ALIASES:
+            return ROUTINE_EXERCISE_ALIASES[raw]
         for exercise_type in SUPPORTED_ROUTINE_EXERCISES:
             if exercise_type in raw:
                 return exercise_type
@@ -298,6 +429,11 @@ class CoachClient:
         if duration_sec is None:
             return None
         return max(1, int(float(duration_sec) / 3))
+
+    def _optional_int(self, value) -> int | None:
+        if value is None:
+            return None
+        return int(value)
 
     def _estimate_minutes(self, items: list[RoutineItemPayload]) -> int:
         total_reps = sum(item.reps for item in items)

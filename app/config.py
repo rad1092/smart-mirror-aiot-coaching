@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     service_name: str = "pc3-vision-gateway"
     pc2_coach_api_url: str = "http://localhost:7000/api/coach/generate"
     pc2_routine_api_url: str = "http://localhost:7000/api/routine/profile"
+    pc2_routine_day_api_url: str = "http://localhost:7000/api/routine/profile/{user_id}/day"
     mock_llm: bool = True
     host: str = "127.0.0.1"
     port: int = 9000

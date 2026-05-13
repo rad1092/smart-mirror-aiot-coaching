@@ -23,8 +23,8 @@ def _save_complete_baseline(client, user_id: str = "routine_user") -> None:
     assert response.status_code == 200
 
 
-def _routine_request(user_id: str = "routine_user") -> dict:
-    return {
+def _routine_request(user_id: str = "routine_user", include_start_date: bool = True) -> dict:
+    payload = {
         "user_id": user_id,
         "profile": {
             "name": "Mirror User",
@@ -44,6 +44,24 @@ def _routine_request(user_id: str = "routine_user") -> dict:
                 "body_left_full",
             ],
         },
+        "purpose": "pre_exercise_routine",
+    }
+    if include_start_date:
+        payload["start_date"] = "2026-05-13"
+    return payload
+
+
+def _flat_routine_request(user_id: str = "routine_user") -> dict:
+    return {
+        "user_id": user_id,
+        "profile_name": "Flat User",
+        "weight_kg": 65,
+        "user_goal": "운동 습관 만들기",
+        "exercise_experience": "꾸준한 운동",
+        "available_days_per_week": 5,
+        "restricted_body_parts": ["무릎", "어깨"],
+        "start_date": "2026-05-14",
+        "purpose": "profile weekly routine",
     }
 
 
@@ -61,17 +79,23 @@ def _pc2_routine_response() -> dict:
                         "exercise": "squat",
                         "sets": 3,
                         "reps": 10,
+                        "duration_sec": None,
                         "rest_sec": 75,
                         "focus": "knee alignment",
                         "reason": "Start with a controlled squat.",
+                        "how_to": "Stand tall, sit the hips back, then press through the feet.",
+                        "tips": "Keep knees tracking over toes.",
                     },
                     {
                         "exercise": "knee_raise",
                         "sets": 2,
                         "reps": 12,
+                        "duration_sec": None,
                         "rest_sec": 45,
                         "focus": "left right balance",
                         "reason": "Improve balance before intensity.",
+                        "how_to": "Raise each knee to hip height with a tall torso.",
+                        "tips": "Move evenly on both sides.",
                     },
                 ],
             },
@@ -81,22 +105,29 @@ def _pc2_routine_response() -> dict:
                 "focus": "Support",
                 "exercises": [
                     {
-                        "exercise": "pushup",
+                        "exercise": "push-up",
                         "sets": 2,
                         "reps": 8,
+                        "duration_sec": None,
                         "rest_sec": 60,
                         "focus": "upper support",
                         "reason": "Add support work.",
+                        "how_to": "Keep the body straight while lowering and pressing up.",
+                        "tips": "Brace the core.",
                     }
                 ],
             },
         ],
         "cautions": ["Stop if knee pain appears."],
-        "pc3_payload": {},
+        "pc3_payload": {
+            "routine_id": "routine_abc",
+            "start_date": "2026-05-13",
+            "scheduled_dates": ["2026-05-13", "2026-05-14"],
+        },
     }
 
 
-def test_profile_routine_calls_pc2_with_sanitized_payload(client, monkeypatch):
+def test_profile_routine_calls_pc2_with_sanitized_payload_and_preserves_schedule(client, monkeypatch):
     captured: dict = {}
     _save_complete_baseline(client)
 
@@ -136,20 +167,98 @@ def test_profile_routine_calls_pc2_with_sanitized_payload(client, monkeypatch):
     assert captured["url"] == "http://pc2.local:7000/api/routine/profile"
     assert captured["json"] == {
         "user_id": "routine_user",
-        "user_goal": "lower body strength",
-        "exercise_experience": "beginner",
+        "user_goal": "하체 강화",
+        "exercise_experience": "초보",
         "available_days_per_week": 4,
-        "restricted_body_parts": ["knee"],
+        "restricted_body_parts": ["무릎"],
         "purpose": "pre_exercise_routine",
         "profile_name": "Mirror User",
         "weight_kg": 70.0,
+        "start_date": "2026-05-13",
     }
     body = response.json()
     assert body["source"] == "ai"
     assert body["difficulty"] == "easy"
+    assert body["routine_id"] == "routine_abc"
+    assert body["start_date"] == "2026-05-13"
+    assert body["scheduled_dates"] == ["2026-05-13", "2026-05-14"]
     assert body["start_exercise_type"] == "squat"
     assert [item["exercise_type"] for item in body["items"]] == ["squat", "knee_raise", "pushup"]
+    assert body["items"][0]["how_to"].startswith("Stand tall")
+    assert body["weekly_routine"][0]["exercises"][0]["tips"] == "Keep knees tracking over toes."
     assert "Build stable squat mechanics." in body["reason_lines"]
+    assert "target_status" not in captured["json"]
+    assert "measurement_quality" not in captured["json"]
+    assert all(value is not None for value in captured["json"].values())
+
+
+def test_profile_routine_flat_payload_is_normalized_for_pc2(client, monkeypatch):
+    captured: dict = {}
+    _save_complete_baseline(client)
+
+    class DummyAsyncClient:
+        def __init__(self, timeout: float) -> None:
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def post(self, url: str, json: dict):
+            captured["json"] = json
+            return httpx.Response(200, json=_pc2_routine_response(), request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "AsyncClient", DummyAsyncClient)
+    app.dependency_overrides[get_coach_client] = lambda: CoachClient(Settings(_env_file=None, mock_llm=False))
+    try:
+        response = client.post("/api/routines/profile", json=_flat_routine_request())
+    finally:
+        app.dependency_overrides.pop(get_coach_client, None)
+
+    assert response.status_code == 200
+    assert captured["json"] == {
+        "user_id": "routine_user",
+        "user_goal": "운동 습관 만들기",
+        "exercise_experience": "꾸준한 운동",
+        "available_days_per_week": 5,
+        "restricted_body_parts": ["무릎", "어깨"],
+        "purpose": "profile weekly routine",
+        "profile_name": "Flat User",
+        "weight_kg": 65.0,
+        "start_date": "2026-05-14",
+    }
+    assert response.json()["difficulty"] == "challenge"
+
+
+def test_profile_routine_omits_start_date_when_not_provided(client, monkeypatch):
+    captured: dict = {}
+    _save_complete_baseline(client)
+
+    class DummyAsyncClient:
+        def __init__(self, timeout: float) -> None:
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def post(self, url: str, json: dict):
+            captured["json"] = json
+            return httpx.Response(200, json=_pc2_routine_response(), request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "AsyncClient", DummyAsyncClient)
+    app.dependency_overrides[get_coach_client] = lambda: CoachClient(Settings(_env_file=None, mock_llm=False))
+    try:
+        response = client.post("/api/routines/profile", json=_routine_request(include_start_date=False))
+    finally:
+        app.dependency_overrides.pop(get_coach_client, None)
+
+    assert response.status_code == 200
+    assert "start_date" not in captured["json"]
 
 
 def test_profile_routine_rejects_missing_profile_fields_before_pc2(client):
@@ -211,5 +320,124 @@ def test_profile_routine_returns_pc1_renderable_fallback_when_pc2_fails(client, 
     body = response.json()
     assert body["source"] == "basic"
     assert body["items"]
+    assert body["routine_id"] is None
+    assert body["scheduled_dates"] == []
+    assert body["weekly_routine"] == []
     assert body["start_exercise_type"] == body["items"][0]["exercise_type"]
     assert "PC2 unavailable" in body["reason_lines"][0]
+
+
+def test_profile_routine_day_proxies_pc2_day_endpoint(client, monkeypatch):
+    captured: dict = {}
+
+    class DummyAsyncClient:
+        def __init__(self, timeout: float) -> None:
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def get(self, url: str, params: dict | None = None):
+            captured["url"] = url
+            captured["params"] = params
+            return httpx.Response(
+                200,
+                json={
+                    "routine_id": "routine_abc",
+                    "user_id": "routine_user",
+                    "scheduled_date": "2026-05-14",
+                    "day_index": 2,
+                    "day_label": "Day 2",
+                    "focus": "Upper body",
+                    "exercises": [
+                        {
+                            "exercise": "push-up",
+                            "sets": 3,
+                            "reps": 8,
+                            "rest_sec": 60,
+                            "focus": "body line",
+                            "reason": "Build upper support.",
+                            "how_to": "Lower and press while keeping one straight body line.",
+                            "tips": "Brace the core.",
+                        }
+                    ],
+                    "summary": "Weekly routine",
+                    "weekly_focus": "Consistency",
+                    "message": "Today is pushup day.",
+                },
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr(httpx, "AsyncClient", DummyAsyncClient)
+    app.dependency_overrides[get_coach_client] = lambda: CoachClient(
+        Settings(
+            _env_file=None,
+            pc2_routine_day_api_url="http://pc2.local:7000/api/routine/profile/{user_id}/day",
+        )
+    )
+    try:
+        response = client.get("/api/routines/profile/routine_user/day?target_date=2026-05-14")
+    finally:
+        app.dependency_overrides.pop(get_coach_client, None)
+
+    assert response.status_code == 200
+    assert captured["url"] == "http://pc2.local:7000/api/routine/profile/routine_user/day"
+    assert captured["params"] == {"target_date": "2026-05-14"}
+    body = response.json()
+    assert body["routine_id"] == "routine_abc"
+    assert body["exercises"][0]["exercise"] == "pushup"
+    assert body["exercises"][0]["how_to"].startswith("Lower and press")
+    assert body["message"] == "Today is pushup day."
+
+
+def test_profile_routine_day_preserves_pc2_404(client, monkeypatch):
+    class MissingAsyncClient:
+        def __init__(self, timeout: float) -> None:
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def get(self, url: str, params: dict | None = None):
+            return httpx.Response(404, json={"detail": "not found"}, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx, "AsyncClient", MissingAsyncClient)
+    app.dependency_overrides[get_coach_client] = lambda: CoachClient(Settings(_env_file=None))
+    try:
+        response = client.get("/api/routines/profile/routine_user/day?target_date=2026-05-14")
+    finally:
+        app.dependency_overrides.pop(get_coach_client, None)
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["reason"] == "routine_day_not_found"
+
+
+def test_profile_routine_day_returns_503_when_pc2_unavailable(client, monkeypatch):
+    class FailingAsyncClient:
+        def __init__(self, timeout: float) -> None:
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def get(self, url: str, params: dict | None = None):
+            raise httpx.ConnectError("pc2 down", request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx, "AsyncClient", FailingAsyncClient)
+    app.dependency_overrides[get_coach_client] = lambda: CoachClient(Settings(_env_file=None))
+    try:
+        response = client.get("/api/routines/profile/routine_user/day?target_date=2026-05-14")
+    finally:
+        app.dependency_overrides.pop(get_coach_client, None)
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["reason"] == "pc2_routine_day_unavailable"

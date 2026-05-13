@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -40,6 +41,12 @@ class RecommendationRequest(BaseModel):
     user_id: str = Field(min_length=1)
     profile: RecommendationProfile
     baseline: RecommendationBaseline = Field(default_factory=RecommendationBaseline)
+    start_date: date | None = None
+    purpose: str | None = None
+    pc2_user_goal: str | None = None
+    pc2_exercise_experience: str | None = None
+    pc2_available_days_per_week: int | None = Field(default=None, ge=1, le=7)
+    pc2_restricted_body_parts: list[str] = Field(default_factory=list)
 
 
 class RoutineItemPayload(BaseModel):
@@ -49,6 +56,30 @@ class RoutineItemPayload(BaseModel):
     rest_sec: int = Field(ge=0)
     focus: str
     summary: str | None = None
+    sets: int | None = Field(default=None, ge=1)
+    duration_sec: int | None = Field(default=None, ge=0)
+    reason: str | None = None
+    how_to: str | None = None
+    tips: str | None = None
+
+
+class WeeklyRoutineExercisePayload(BaseModel):
+    exercise: ExerciseType
+    sets: int | None = Field(default=None, ge=1)
+    reps: int | None = Field(default=None, ge=1)
+    duration_sec: int | None = Field(default=None, ge=0)
+    rest_sec: int | None = Field(default=None, ge=0)
+    focus: str
+    reason: str = ""
+    how_to: str = ""
+    tips: str = ""
+
+
+class WeeklyRoutineDayPayload(BaseModel):
+    day_index: int = Field(ge=1, le=7)
+    day_label: str
+    focus: str
+    exercises: list[WeeklyRoutineExercisePayload] = Field(default_factory=list)
 
 
 class RecommendationResponse(BaseModel):
@@ -60,3 +91,21 @@ class RecommendationResponse(BaseModel):
     estimated_minutes: int = Field(ge=1)
     start_exercise_type: ExerciseType
     items: list[RoutineItemPayload] = Field(default_factory=list)
+    routine_id: str | None = None
+    start_date: str | None = None
+    scheduled_dates: list[str] = Field(default_factory=list)
+    weekly_routine: list[WeeklyRoutineDayPayload] = Field(default_factory=list)
+
+
+class RoutineDayResponse(BaseModel):
+    routine_id: str
+    user_id: str
+    scheduled_date: str
+    day_index: int = Field(ge=1, le=7)
+    day_label: str
+    focus: str
+    exercises: list[WeeklyRoutineExercisePayload] = Field(default_factory=list)
+    summary: str
+    weekly_focus: str
+    message: str
+    created_at: str | None = None
