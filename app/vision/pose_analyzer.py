@@ -160,18 +160,27 @@ class PoseAnalyzer:
     def __init__(
         self,
         pose_model_path: str | Path | None = None,
+        fast_pose_model_path: str | Path | None = None,
+        accurate_pose_model_path: str | Path | None = None,
         exercise_thresholds_path: str | Path | None = None,
         exercise_rules_path: str | Path | None = None,
         exercise_classifier_path: str | Path | None = None,
         use_mediapipe_tasks: bool = False,
+        pose_pipeline_mode: str = "single",
+        accurate_interval: int = 1,
         max_poses: int = 3,
     ) -> None:
         self._thresholds = load_json_file(exercise_thresholds_path, self._DEFAULT_THRESHOLDS)
         self._exercise_rules = load_json_file(exercise_rules_path, {})
         self._exercise_classifier = ExerciseClassifier(exercise_classifier_path)
         self._max_poses = max(1, int(max_poses))
+        self._pipeline_mode = "dual" if str(pose_pipeline_mode).lower() == "dual" else "single"
+        self._accurate_interval = max(1, int(accurate_interval))
+        self._frame_index = 0
         self._backend = "fallback"
         self._landmarker = None
+        self._fast_landmarker = None
+        self._accurate_landmarker = None
         self._mp = None
 
         if not use_mediapipe_tasks:
@@ -184,6 +193,27 @@ class PoseAnalyzer:
             logger.warning("POSE_MODEL_PATH is not configured. Pose analysis will use fallback.")
             return
 
+        if self._pipeline_mode == "dual":
+            fast_path = Path(fast_pose_model_path or pose_model_path)
+            accurate_path = Path(accurate_pose_model_path or pose_model_path)
+            self._fast_landmarker = self._create_tasks_pose_landmarker(fast_path, "fast")
+            self._accurate_landmarker = self._create_tasks_pose_landmarker(accurate_path, "accurate")
+            if self._fast_landmarker is not None and self._accurate_landmarker is not None:
+                self._landmarker = self._accurate_landmarker
+                self._backend = "mediapipe_tasks_dual"
+                logger.info(
+                    "Dual MediaPipe PoseLandmarker initialized: fast=%s accurate=%s",
+                    fast_path,
+                    accurate_path,
+                )
+                return
+            fallback_landmarker = self._accurate_landmarker or self._fast_landmarker
+            if fallback_landmarker is not None:
+                self._landmarker = fallback_landmarker
+                self._backend = "mediapipe_tasks"
+                logger.warning("Dual pose pipeline is incomplete. Falling back to single MediaPipe mode.")
+                return
+
         self._try_initialize_tasks_pose(Path(pose_model_path))
 
     @property
@@ -192,12 +222,27 @@ class PoseAnalyzer:
 
     @property
     def use_mediapipe(self) -> bool:
-        return self._backend == "mediapipe_tasks" and self._landmarker is not None
+        return self._backend in {"mediapipe_tasks", "mediapipe_tasks_dual"} and (
+            self._landmarker is not None
+            or self._fast_landmarker is not None
+            or self._accurate_landmarker is not None
+        )
 
     def _try_initialize_tasks_pose(self, pose_model_path: Path) -> bool:
-        if not pose_model_path.exists():
-            logger.warning("POSE_MODEL_PATH does not exist: %s. Pose fallback will be used.", pose_model_path)
+        landmarker = self._create_tasks_pose_landmarker(pose_model_path, "single")
+        if landmarker is None:
+            self._landmarker = None
+            self._backend = "fallback"
             return False
+        self._landmarker = landmarker
+        self._backend = "mediapipe_tasks"
+        logger.info("MediaPipe Tasks PoseLandmarker initialized: %s", pose_model_path)
+        return True
+
+    def _create_tasks_pose_landmarker(self, pose_model_path: Path, role: str):
+        if not pose_model_path.exists():
+            logger.warning("POSE_MODEL_PATH for %s does not exist: %s.", role, pose_model_path)
+            return None
         try:
             import mediapipe as mp
             from mediapipe.tasks import python
@@ -213,17 +258,11 @@ class PoseAnalyzer:
                 min_tracking_confidence=self._min_landmark_visibility(),
                 output_segmentation_masks=False,
             )
-            self._landmarker = vision.PoseLandmarker.create_from_options(options)
             self._mp = mp
-            self._backend = "mediapipe_tasks"
-            logger.info("MediaPipe Tasks PoseLandmarker initialized: %s", pose_model_path)
-            return True
+            return vision.PoseLandmarker.create_from_options(options)
         except Exception:
-            logger.exception("Failed to initialize MediaPipe Tasks PoseLandmarker. Falling back.")
-            self._landmarker = None
-            self._mp = None
-            self._backend = "fallback"
-            return False
+            logger.exception("Failed to initialize MediaPipe Tasks PoseLandmarker for %s.", role)
+            return None
 
     def analyze(
         self,
@@ -235,7 +274,85 @@ class PoseAnalyzer:
         if previous is None or previous.type != exercise_type:
             previous = ExerciseFeature(type=exercise_type)
 
+        if self._dual_ready():
+            return self._analyze_dual(frame, previous, exercise_type)
+
         detected_landmarks = self._detect_landmarks(frame)
+        return self._analyze_detected_landmarks(detected_landmarks, previous, exercise_type)
+
+    def _analyze_dual(
+        self,
+        frame,
+        previous: ExerciseFeature,
+        exercise_type: str,
+    ) -> tuple[ExerciseFeature, str]:
+        self._frame_index += 1
+        fast_detected = self._detect_landmarks_with(frame, self._fast_landmarker, "fast")
+        fast_feature, fast_feedback = self._analyze_detected_landmarks(
+            fast_detected,
+            previous,
+            exercise_type,
+        )
+        if self._has_blocking_errors(fast_feature):
+            return fast_feature.model_copy(
+                update={
+                    "measurement_quality": "blocked",
+                    "measurement_confidence": 0.0,
+                }
+            ), fast_feedback
+
+        if self._frame_index % self._accurate_interval != 0:
+            return self._mark_fast_only(fast_feature, previous), fast_feedback
+
+        accurate_detected = self._detect_landmarks_with(frame, self._accurate_landmarker, "accurate")
+        previous_for_accurate = previous.model_copy(
+            update={
+                "target_signature": fast_feature.target_signature,
+                "classifier_window": previous.classifier_window,
+            }
+        )
+        accurate_feature, accurate_feedback = self._analyze_detected_landmarks(
+            accurate_detected,
+            previous_for_accurate,
+            exercise_type,
+        )
+
+        if self._has_blocking_errors(accurate_feature):
+            return self._mark_fast_only(
+                fast_feature,
+                previous,
+            ), "Accurate pose check failed. Using fast pose only for this frame."
+
+        target_updates = {
+            "person_count": fast_feature.person_count,
+            "target_status": fast_feature.target_status,
+            "target_confidence": min(
+                fast_feature.target_confidence or 0.0,
+                accurate_feature.target_confidence or 0.0,
+            ),
+            "target_signature": fast_feature.target_signature,
+        }
+        accurate_feature = accurate_feature.model_copy(update=target_updates)
+        if self._features_disagree(fast_feature, accurate_feature, previous):
+            return self._mark_model_disagreement(
+                accurate_feature,
+                previous,
+            ), "Pose models disagree. Hold the posture clearly before counting."
+
+        confidence = min(accurate_feature.stability_score, target_updates["target_confidence"])
+        return accurate_feature.model_copy(
+            update={
+                "measurement_quality": "dual_verified",
+                "measurement_confidence": round(self._clamp(confidence), 3),
+            }
+        ), accurate_feedback
+
+    def _analyze_detected_landmarks(
+        self,
+        detected_landmarks,
+        previous: ExerciseFeature,
+        exercise_type: str,
+    ) -> tuple[ExerciseFeature, str]:
         pose_candidates = self._pose_candidates(detected_landmarks)
         person_count = len(pose_candidates)
         if not pose_candidates:
@@ -666,6 +783,77 @@ class PoseAnalyzer:
             return count, count_left, count_right, "up", None
         return count, count_left, count_right, phase, pending_side
 
+    def _dual_ready(self) -> bool:
+        return (
+            self._backend == "mediapipe_tasks_dual"
+            and self._fast_landmarker is not None
+            and self._accurate_landmarker is not None
+        )
+
+    def _has_blocking_errors(self, feature: ExerciseFeature) -> bool:
+        blocking = {
+            "no_person",
+            "target_lost",
+            "person_too_far",
+            "partial_body",
+            "low_confidence",
+            "analysis_failed",
+        }
+        return any(error in blocking for error in feature.posture_errors)
+
+    def _mark_fast_only(self, feature: ExerciseFeature, previous: ExerciseFeature) -> ExerciseFeature:
+        feature = self._prevent_new_count(feature, previous)
+        errors = list(feature.posture_errors)
+        if "fast_only" not in errors:
+            errors.append("fast_only")
+        confidence = min(feature.stability_score, feature.target_confidence or 0.0, 0.6)
+        return feature.model_copy(
+            update={
+                "posture_errors": errors,
+                "measurement_quality": "fast_only",
+                "measurement_confidence": round(self._clamp(confidence), 3),
+            }
+        )
+
+    def _mark_model_disagreement(self, feature: ExerciseFeature, previous: ExerciseFeature) -> ExerciseFeature:
+        feature = self._prevent_new_count(feature, previous)
+        errors = list(feature.posture_errors)
+        if "model_disagreement" not in errors:
+            errors.append("model_disagreement")
+        return feature.model_copy(
+            update={
+                "posture_errors": errors,
+                "measurement_quality": "model_disagreement",
+                "measurement_confidence": 0.0,
+            }
+        )
+
+    def _prevent_new_count(self, feature: ExerciseFeature, previous: ExerciseFeature) -> ExerciseFeature:
+        update: dict[str, Any] = {}
+        if feature.count > previous.count:
+            update["count"] = previous.count
+            update["rep_phase"] = previous.rep_phase
+            update["active_side"] = previous.active_side
+        if feature.count_left is not None and previous.count_left is not None and feature.count_left > previous.count_left:
+            update["count_left"] = previous.count_left
+        if feature.count_right is not None and previous.count_right is not None and feature.count_right > previous.count_right:
+            update["count_right"] = previous.count_right
+        return feature.model_copy(update=update) if update else feature
+
+    def _features_disagree(
+        self,
+        fast_feature: ExerciseFeature,
+        accurate_feature: ExerciseFeature,
+        previous: ExerciseFeature,
+    ) -> bool:
+        active_states = {"up", "down"}
+        if fast_feature.state in active_states and accurate_feature.state in active_states:
+            if fast_feature.state != accurate_feature.state:
+                return True
+        fast_counted = fast_feature.count > previous.count
+        accurate_counted = accurate_feature.count > previous.count
+        return fast_counted != accurate_counted
+
     def _with_target_and_classification(
         self,
         feature: ExerciseFeature,
@@ -727,6 +915,38 @@ class PoseAnalyzer:
             "signature": self._target_signature(selected),
         }
 
+    def _match_accurate_target(self, candidates: list, fast_signature: dict[str, float] | None) -> dict[str, Any]:
+        if not candidates or fast_signature is None:
+            return {
+                "landmarks": None,
+                "confidence": 0.0,
+                "signature": fast_signature,
+            }
+        scored = [
+            (self._target_match_confidence(candidate, fast_signature), candidate)
+            for candidate in candidates
+        ]
+        confidence, selected = max(scored, key=lambda item: item[0])
+        if confidence < 0.45:
+            return {
+                "landmarks": None,
+                "confidence": round(max(0.0, confidence), 3),
+                "signature": fast_signature,
+            }
+        return {
+            "landmarks": selected,
+            "confidence": round(confidence, 3),
+            "signature": self._target_signature(selected),
+        }
+
+    def _target_updates_from_selection(self, selection: dict[str, Any], person_count: int) -> dict[str, Any]:
+        return {
+            "person_count": person_count,
+            "target_status": selection["status"],
+            "target_confidence": selection["confidence"],
+            "target_signature": selection["signature"],
+        }
+
     def _initial_target_score(self, landmarks) -> float:
         signature = self._target_signature(landmarks)
         center_distance = abs(signature["center_x"] - 0.5)
@@ -786,20 +1006,23 @@ class PoseAnalyzer:
         return sum(distances) / len(distances) if distances else 0.0
 
     def _detect_landmarks(self, frame):
-        if cv2 is None or self._landmarker is None or self._mp is None:
+        return self._detect_landmarks_with(frame, self._landmarker, "single")
+
+    def _detect_landmarks_with(self, frame, landmarker, role: str):
+        if cv2 is None or landmarker is None or self._mp is None:
             return None
         try:
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             mp_image = self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=rgb_frame)
-            result = self._landmarker.detect(mp_image)
+            result = landmarker.detect(mp_image)
             if not result.pose_landmarks:
                 return None
             return list(result.pose_landmarks)
         except Exception:
-            logger.exception("MediaPipe pose inference failed. Returning fallback for this request.")
-            self._backend = "fallback"
-            self._landmarker = None
-            self._mp = None
+            logger.exception("MediaPipe pose inference failed for %s. Returning fallback for this request.", role)
+            if role == "single":
+                self._backend = "fallback"
+                self._landmarker = None
             return None
 
     def _landmark(self, landmarks, side: str, part: str):
@@ -1052,10 +1275,103 @@ class PoseAnalyzer:
     def _clamp(self, value: float, minimum: float = 0.0, maximum: float = 1.0) -> float:
         return max(minimum, min(maximum, value))
 
+    def validate_body_baseline(self, frame) -> dict[str, Any]:
+        detected = (
+            self._detect_landmarks_with(frame, self._fast_landmarker, "fast")
+            if self._dual_ready()
+            else self._detect_landmarks(frame)
+        )
+        candidates = self._pose_candidates(detected)
+        if not candidates:
+            return {
+                "valid": False,
+                "reason": "No full body detected. Step back into the camera frame.",
+                "errors": ["no_person"],
+                "proportions": None,
+            }
+
+        fast_landmarks = max(candidates, key=self._initial_target_score)
+        fast_errors = self._baseline_landmark_errors(fast_landmarks)
+        if fast_errors:
+            return {
+                "valid": False,
+                "reason": self._baseline_reason(fast_errors),
+                "errors": fast_errors,
+                "proportions": None,
+            }
+
+        selected_landmarks = fast_landmarks
+        if self._dual_ready():
+            accurate_candidates = self._pose_candidates(
+                self._detect_landmarks_with(frame, self._accurate_landmarker, "accurate")
+            )
+            accurate_selection = self._match_accurate_target(
+                accurate_candidates,
+                self._target_signature(fast_landmarks),
+            )
+            if accurate_selection["landmarks"] is None:
+                return {
+                    "valid": False,
+                    "reason": self._baseline_reason(["model_disagreement"]),
+                    "errors": ["model_disagreement"],
+                    "proportions": None,
+                }
+            accurate_errors = self._baseline_landmark_errors(accurate_selection["landmarks"])
+            if accurate_errors:
+                return {
+                    "valid": False,
+                    "reason": self._baseline_reason(accurate_errors),
+                    "errors": accurate_errors,
+                    "proportions": None,
+                }
+            selected_landmarks = accurate_selection["landmarks"]
+
+        return {
+            "valid": True,
+            "reason": None,
+            "errors": [],
+            "proportions": self._body_proportions_from_landmarks(selected_landmarks),
+        }
+
+    def _baseline_landmark_errors(self, landmarks) -> list[str]:
+        required = self._REQUIRED_LANDMARKS["squat"]
+        if self._person_too_far(landmarks, "squat"):
+            return ["person_too_far"]
+        if self._has_partial_body(landmarks, required):
+            return ["low_confidence", "partial_body"]
+        if not self._landmarks_are_confident(landmarks, required, "squat"):
+            return ["low_confidence"]
+        return []
+
+    def _baseline_reason(self, errors: list[str]) -> str:
+        if "person_too_far" in errors:
+            return "Body is too small in frame. Move closer while keeping the whole body visible."
+        if "partial_body" in errors:
+            return "Full body is not visible. Fit head, torso, knees, and feet inside the frame."
+        if "model_disagreement" in errors:
+            return "Pose checks disagree. Hold still and keep the whole body visible."
+        if "low_confidence" in errors:
+            return "Pose confidence is low. Improve lighting and keep joints visible."
+        return "Full body is not visible. Step back so the camera can see you."
+
+    def _body_proportions_from_landmarks(self, landmarks) -> dict[str, float]:
+        shoulder_width = round(self._width(landmarks, "SHOULDER"), 4)
+        hip_width = round(self._width(landmarks, "HIP"), 4)
+        shoulder_mid = self._midpoint(landmarks, "SHOULDER")
+        ankle_mid = self._midpoint(landmarks, "ANKLE")
+        body_height = round(abs(ankle_mid.y - shoulder_mid.y), 4)
+        return {
+            "shoulder_width": shoulder_width,
+            "hip_width": hip_width,
+            "body_height": body_height,
+        }
+
     def extract_body_proportions(self, frame) -> dict[str, float] | None:
         landmarks = self._detect_landmarks(frame)
-        if landmarks is None:
+        candidates = self._pose_candidates(landmarks)
+        if not candidates:
             return None
+        landmarks = max(candidates, key=self._initial_target_score)
         if not self._landmarks_are_confident(
             landmarks,
             self._REQUIRED_LANDMARKS["squat"],
@@ -1064,16 +1380,7 @@ class PoseAnalyzer:
             return None
 
         try:
-            shoulder_width = round(self._width(landmarks, "SHOULDER"), 4)
-            hip_width = round(self._width(landmarks, "HIP"), 4)
-            shoulder_mid = self._midpoint(landmarks, "SHOULDER")
-            ankle_mid = self._midpoint(landmarks, "ANKLE")
-            body_height = round(abs(ankle_mid.y - shoulder_mid.y), 4)
-            return {
-                "shoulder_width": shoulder_width,
-                "hip_width": hip_width,
-                "body_height": body_height,
-            }
+            return self._body_proportions_from_landmarks(landmarks)
         except Exception:
             logger.exception("Failed to extract body proportions from landmarks.")
             return None

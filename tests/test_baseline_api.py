@@ -65,6 +65,72 @@ def test_capture_baseline_slot_saves_body_checkpoint(client, image_bytes):
     assert baseline["baseline"]["body"]["body_front_full"]["captured"] is True
 
 
+def test_capture_baseline_body_uses_pose_visibility_validation(client, image_bytes):
+    class ValidatingPoseAnalyzer:
+        use_mediapipe = True
+
+        def validate_body_baseline(self, frame):
+            return {
+                "valid": True,
+                "reason": None,
+                "errors": [],
+                "proportions": {
+                    "shoulder_width": 0.21,
+                    "hip_width": 0.18,
+                    "body_height": 0.72,
+                },
+            }
+
+    client.app.dependency_overrides[get_pose_analyzer] = lambda: ValidatingPoseAnalyzer()
+    try:
+        response = client.post(
+            "/api/baselines/users/validated_user/capture",
+            data={"slot_type": "body_left_full"},
+            files={"file": ("body.jpg", image_bytes, "image/jpeg")},
+        )
+    finally:
+        client.app.dependency_overrides.pop(get_pose_analyzer, None)
+
+    assert response.status_code == 200
+    assert response.json()["valid"] is True
+    baseline = client.get("/api/baselines/users/validated_user").json()
+    saved = baseline["baseline"]["body"]["body_left_full"]
+    assert saved["captured"] is True
+    assert saved["body_height"] == 0.72
+
+
+def test_capture_baseline_body_rejects_low_quality_pose_without_saving(client, image_bytes):
+    class InvalidPoseAnalyzer:
+        use_mediapipe = True
+
+        def validate_body_baseline(self, frame):
+            return {
+                "valid": False,
+                "reason": "Pose checks disagree.",
+                "errors": ["model_disagreement"],
+                "proportions": None,
+            }
+
+    client.app.dependency_overrides[get_pose_analyzer] = lambda: InvalidPoseAnalyzer()
+    try:
+        response = client.post(
+            "/api/baselines/users/rejected_user/capture",
+            data={"slot_type": "body_right_full"},
+            files={"file": ("body.jpg", image_bytes, "image/jpeg")},
+        )
+    finally:
+        client.app.dependency_overrides.pop(get_pose_analyzer, None)
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "valid": False,
+        "slot_type": "body_right_full",
+        "reason": "Pose checks disagree.",
+    }
+    baseline = client.get("/api/baselines/users/rejected_user").json()
+    assert baseline["source"] == "default"
+
+
 def test_capture_baseline_rejects_unknown_slot(client, image_bytes):
     response = client.post(
         "/api/baselines/users/capture_user/capture",

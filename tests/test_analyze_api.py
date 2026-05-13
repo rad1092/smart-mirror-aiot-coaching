@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from app.dependencies import get_pose_analyzer
+from app.dependencies import get_coach_client, get_pose_analyzer
 from app.main import app
+from app.schemas.coaching import CoachingResponse, ExercisePlanItem, PC2Payload, RoutineItem
 from app.schemas.feature import ExerciseFeature
 
 
@@ -196,6 +197,95 @@ def test_exercise_session_goal_sets_final_exercise_type(client):
     assert body["coaching"]["exercise_plan"][0]["exercise"] == "pushup"
 
 
+def test_session_stop_calls_pc2_when_measurement_quality_is_good(client, image_bytes):
+    calls: dict[str, int] = {"generate": 0}
+
+    class GoodPoseAnalyzer(FakePoseAnalyzer):
+        def __init__(self) -> None:
+            super().__init__(
+                ExerciseFeature(
+                    type="squat",
+                    count=2,
+                    state="up",
+                    stability_score=0.9,
+                    posture_errors=[],
+                    measurement_quality="dual_verified",
+                    measurement_confidence=0.9,
+                )
+            )
+
+    class DummyCoachClient:
+        async def generate(self, payload):
+            calls["generate"] += 1
+            return _coaching_response("pc2 called", payload.features.exercise.type)
+
+        def measurement_quality_response(self, payload, quality):
+            raise AssertionError("measurement fallback should not be used")
+
+    app.dependency_overrides[get_pose_analyzer] = lambda: GoodPoseAnalyzer()
+    app.dependency_overrides[get_coach_client] = lambda: DummyCoachClient()
+    try:
+        session_id = _start_session(client, "exercise", "squat")
+        frame = client.post(
+            "/api/analyze/exercise",
+            data={"session_id": session_id},
+            files=_file(image_bytes),
+        )
+        assert frame.status_code == 200
+        stop = client.post(f"/api/sessions/{session_id}/stop")
+    finally:
+        app.dependency_overrides.pop(get_pose_analyzer, None)
+        app.dependency_overrides.pop(get_coach_client, None)
+
+    assert stop.status_code == 200
+    assert calls["generate"] == 1
+    assert stop.json()["features"]["exercise"]["measurement_quality"] == "pc2_ready"
+    assert stop.json()["coaching"]["summary"] == "pc2 called"
+
+
+def test_session_stop_skips_pc2_when_measurement_quality_is_bad(client, image_bytes):
+    class BadPoseAnalyzer(FakePoseAnalyzer):
+        def __init__(self) -> None:
+            super().__init__(
+                ExerciseFeature(
+                    type="squat",
+                    count=0,
+                    state="idle",
+                    stability_score=0.2,
+                    posture_errors=["model_disagreement"],
+                    measurement_quality="model_disagreement",
+                    measurement_confidence=0.0,
+                )
+            )
+
+    class DummyCoachClient:
+        async def generate(self, payload):
+            raise AssertionError("PC2 should be skipped for bad measurements")
+
+        def measurement_quality_response(self, payload, quality):
+            return _coaching_response("measurement fallback", payload.features.exercise.type)
+
+    app.dependency_overrides[get_pose_analyzer] = lambda: BadPoseAnalyzer()
+    app.dependency_overrides[get_coach_client] = lambda: DummyCoachClient()
+    try:
+        session_id = _start_session(client, "exercise", "squat")
+        frame = client.post(
+            "/api/analyze/exercise",
+            data={"session_id": session_id},
+            files=_file(image_bytes),
+        )
+        assert frame.status_code == 200
+        stop = client.post(f"/api/sessions/{session_id}/stop")
+    finally:
+        app.dependency_overrides.pop(get_pose_analyzer, None)
+        app.dependency_overrides.pop(get_coach_client, None)
+
+    assert stop.status_code == 200
+    body = stop.json()
+    assert body["features"]["exercise"]["measurement_quality"] == "low_quality"
+    assert body["coaching"]["summary"] == "measurement fallback"
+
+
 def test_removed_non_exercise_modes_are_not_available(client, image_bytes):
     start_response = client.post(
         "/api/sessions/start",
@@ -209,6 +299,27 @@ def test_removed_non_exercise_modes_are_not_available(client, image_bytes):
         files=_file(image_bytes),
     )
     assert analyze_response.status_code == 404
+
+
+def _coaching_response(summary: str, exercise_type: str) -> CoachingResponse:
+    return CoachingResponse(
+        summary=summary,
+        priority="posture stability",
+        routine=[RoutineItem(title="Next", description="Continue with stable posture.")],
+        exercise_plan=[
+            ExercisePlanItem(
+                exercise=exercise_type,
+                sets=1,
+                reps=5,
+                rest_sec=60,
+                focus="stable posture",
+                reason="test",
+            )
+        ],
+        mirror_message=summary,
+        warnings=[],
+        pc2_payload=PC2Payload(message=summary, display_lines=[summary]),
+    )
 
 
 def _has_no_mojibake(text: str) -> bool:

@@ -113,7 +113,9 @@ PC3가 보내는 메시지:
   "target_confidence": 0.91,
   "detected_type": "squat",
   "exercise_confidence": 0.88,
-  "goal_mismatch": false
+  "goal_mismatch": false,
+  "measurement_quality": "dual_verified",
+  "measurement_confidence": 0.86
 }
 ```
 
@@ -148,6 +150,8 @@ POST /api/sessions/{session_id}/stop
 - `features.exercise.state`
 - `features.exercise.stability_score`
 - `features.exercise.posture_errors`
+- `features.exercise.measurement_quality`
+- `features.exercise.measurement_confidence`
 - `baseline_diff.exercise`
 - `coaching.summary`
 - `coaching.priority`

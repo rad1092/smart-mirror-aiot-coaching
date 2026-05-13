@@ -23,6 +23,8 @@ class ExerciseFeature(BaseModel):
     detected_type: str | None = None
     exercise_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     goal_mismatch: bool | None = None
+    measurement_quality: str | None = None
+    measurement_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     count_left: int | None = None
     count_right: int | None = None
     squat_depth: float | None = None

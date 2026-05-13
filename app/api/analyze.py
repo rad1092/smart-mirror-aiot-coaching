@@ -52,6 +52,7 @@ async def analyze_exercise(
     exercise, feedback = pose_analyzer.analyze(frame, previous, exercise_type=session.goal)
     exercise = exercise.model_copy(update={"type": normalize_exercise_type(session.goal)})
     store.set_exercise_feature(session_id, exercise)
+    store.record_exercise_measurement(session_id, exercise)
     message = {
         "type": "exercise_update",
         "session_id": session_id,
@@ -72,6 +73,8 @@ async def analyze_exercise(
         "detected_type",
         "exercise_confidence",
         "goal_mismatch",
+        "measurement_quality",
+        "measurement_confidence",
     ):
         value = getattr(exercise, key)
         if value is not None:

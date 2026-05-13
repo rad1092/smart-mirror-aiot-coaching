@@ -55,6 +55,46 @@ class CoachClient:
             logger.exception("PC2 Coach API call failed. Falling back to mock coaching.")
             return self._mock_response(payload)
 
+    def measurement_quality_response(self, payload: FeaturePayload, quality: dict) -> CoachingResponse:
+        exercise = payload.features.exercise
+        count = exercise.count if exercise else 0
+        exercise_type = exercise.type if exercise else "squat"
+        confidence = float(quality.get("measurement_confidence", 0.0))
+        message = "Measurement quality is low. Re-run the set with the full body clearly in frame."
+        return CoachingResponse(
+            summary=(
+                f"PC3 measured {count} reps, but the frame quality was not reliable enough "
+                f"for PC2 coaching. Measurement confidence: {confidence:.2f}."
+            ),
+            priority="measurement quality",
+            routine=[
+                RoutineItem(
+                    title="Retake the set",
+                    description="Keep the locked user centered, visible from head to feet, and avoid other people entering.",
+                )
+            ],
+            exercise_plan=[
+                ExercisePlanItem(
+                    exercise=exercise_type,
+                    sets=1,
+                    reps=max(4, count if count else 6),
+                    rest_sec=60,
+                    focus="clear camera framing",
+                    reason="PC3 skipped PC2 because the pose measurement quality was below the configured threshold.",
+                )
+            ],
+            mirror_message=message,
+            warnings=["PC2 feedback was skipped because pose measurement quality was low."],
+            pc2_payload=PC2Payload(
+                message=message,
+                display_lines=[
+                    "Keep your whole body visible",
+                    "Stay as the locked target user",
+                    "Repeat the set before requesting coaching",
+                ],
+            ),
+        )
+
     def build_pc2_request_json(self, payload: FeaturePayload) -> dict:
         exercise = payload.features.exercise
         if payload.mode != "exercise" or payload.event != "session_completed" or exercise is None:

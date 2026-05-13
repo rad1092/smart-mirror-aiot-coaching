@@ -76,7 +76,7 @@ PC3는 PC2로 다음 값을 보내지 않습니다.
 - 전체 landmark 배열
 - segmentation mask
 - camera stream URL
-- PC1 display-only target/classifier fields: `person_count`, `target_status`, `target_confidence`, `detected_type`, `exercise_confidence`, `goal_mismatch`
+- PC1 display-only target/classifier/measurement fields: `person_count`, `target_status`, `target_confidence`, `detected_type`, `exercise_confidence`, `goal_mismatch`, `measurement_quality`, `measurement_confidence`
 - 얼굴/옷 feature
 - 값이 `null`인 field
 

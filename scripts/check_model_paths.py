@@ -7,8 +7,13 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULTS = {
     "USE_MEDIAPIPE_TASKS": "true",
-    "POSE_MODEL_VARIANT": "lite",
+    "POSE_PIPELINE_MODE": "dual",
+    "POSE_MODEL_VARIANT": "full",
+    "POSE_FAST_MODEL_VARIANT": "lite",
+    "POSE_ACCURATE_MODEL_VARIANT": "full",
     "POSE_MODEL_PATH": "",
+    "POSE_FAST_MODEL_PATH": "",
+    "POSE_ACCURATE_MODEL_PATH": "",
     "MAX_POSES": "3",
     "EXERCISE_CLASSIFIER_PATH": "./models/exercise_classifier/exercise_classifier.json",
 }
@@ -78,17 +83,26 @@ def main() -> int:
     use_tasks = truthy(settings["USE_MEDIAPIPE_TASKS"])
     print(f"Checking model paths using env file: {env_path}")
     print(f"USE_MEDIAPIPE_TASKS={str(use_tasks).lower()}")
+    print(f"POSE_PIPELINE_MODE={settings['POSE_PIPELINE_MODE']}")
     print(f"POSE_MODEL_VARIANT={settings['POSE_MODEL_VARIANT']}")
+    print(f"POSE_FAST_MODEL_VARIANT={settings['POSE_FAST_MODEL_VARIANT']}")
+    print(f"POSE_ACCURATE_MODEL_VARIANT={settings['POSE_ACCURATE_MODEL_VARIANT']}")
     print(f"MAX_POSES={settings['MAX_POSES']}")
 
     pose_path = settings["POSE_MODEL_PATH"] or pose_path_for_variant(settings["POSE_MODEL_VARIANT"])
+    fast_pose_path = settings["POSE_FAST_MODEL_PATH"] or pose_path_for_variant(settings["POSE_FAST_MODEL_VARIANT"])
+    accurate_pose_path = settings["POSE_ACCURATE_MODEL_PATH"] or pose_path_for_variant(settings["POSE_ACCURATE_MODEL_VARIANT"])
     pose_ok = check_path("pose", pose_path)
+    fast_ok = check_path("pose fast", fast_pose_path)
+    accurate_ok = check_path("pose accurate", accurate_pose_path)
     check_path("pose lite asset", "./models/pose/pose_landmarker_lite.task")
     check_path("pose full asset", "./models/pose/pose_landmarker_full.task")
     check_path("exercise classifier", settings["EXERCISE_CLASSIFIER_PATH"])
 
     if use_tasks and not pose_ok:
         print("[WARN] USE_MEDIAPIPE_TASKS=true but pose model is missing.")
+    if use_tasks and settings["POSE_PIPELINE_MODE"] == "dual" and not (fast_ok and accurate_ok):
+        print("[WARN] POSE_PIPELINE_MODE=dual but fast or accurate pose model is missing.")
     print("[INFO] fallback/mock mode remains available")
     return 0
 

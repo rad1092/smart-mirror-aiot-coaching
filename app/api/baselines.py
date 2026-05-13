@@ -76,18 +76,18 @@ async def capture_baseline_slot(
         )
 
     if pose_analyzer.use_mediapipe:
-        feature, _ = pose_analyzer.analyze(frame)
-        valid = "no_person" not in feature.posture_errors
+        validation = pose_analyzer.validate_body_baseline(frame)
+        valid = bool(validation["valid"])
         if valid:
             body_update: dict = {"captured": True}
-            proportions = pose_analyzer.extract_body_proportions(frame)
+            proportions = validation.get("proportions")
             if proportions is not None:
                 body_update.update(proportions)
             baseline_service.upsert_baseline(user_id, {"body": {slot_type: body_update}})
         return BaselineCaptureResponse(
             valid=valid,
             slot_type=slot_type,
-            reason=None if valid else "Full body is not visible. Step back so the camera can see you.",
+            reason=None if valid else str(validation["reason"]),
         )
 
     valid = mean_brightness > 0.10

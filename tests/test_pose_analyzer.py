@@ -180,6 +180,26 @@ def _analyzer_with_landmarks(monkeypatch, landmarks: list[Landmark]) -> PoseAnal
     return analyzer
 
 
+def _dual_analyzer(monkeypatch, fast_landmarks, accurate_landmarks) -> PoseAnalyzer:
+    analyzer = PoseAnalyzer(
+        exercise_thresholds_path=Path("config/exercise_thresholds.json"),
+        exercise_rules_path=Path("data/exercise_rules.json"),
+        use_mediapipe_tasks=False,
+        pose_pipeline_mode="dual",
+    )
+    analyzer._backend = "mediapipe_tasks_dual"
+    analyzer._fast_landmarker = object()
+    analyzer._accurate_landmarker = object()
+
+    def detect(frame, landmarker, role):
+        if role == "fast":
+            return fast_landmarks
+        return accurate_landmarks
+
+    monkeypatch.setattr(analyzer, "_detect_landmarks_with", detect)
+    return analyzer
+
+
 def test_pose_analyzer_uses_fallback_when_tasks_disabled():
     analyzer = PoseAnalyzer(use_mediapipe_tasks=False)
 
@@ -242,6 +262,52 @@ def test_squat_counts_down_idle_up_hysteresis(monkeypatch):
     assert up_feature.state == "up"
     assert up_feature.count == 1
     assert up_feature.rep_phase == "up"
+
+
+def test_dual_pose_counts_when_fast_and_accurate_agree(monkeypatch):
+    analyzer = _dual_analyzer(monkeypatch, _squat_landmarks("up"), _squat_landmarks("up"))
+
+    feature, feedback = analyzer.analyze(
+        _blank_frame(),
+        ExerciseFeature(type="squat", count=0, state="down", rep_phase="down"),
+        exercise_type="squat",
+    )
+
+    assert feature.count == 1
+    assert feature.measurement_quality == "dual_verified"
+    assert feature.measurement_confidence and feature.measurement_confidence > 0
+    assert "model_disagreement" not in feature.posture_errors
+    assert _has_no_mojibake(feedback)
+
+
+def test_dual_pose_blocks_count_when_models_disagree(monkeypatch):
+    analyzer = _dual_analyzer(monkeypatch, _squat_landmarks("up"), _squat_landmarks("down"))
+
+    feature, feedback = analyzer.analyze(
+        _blank_frame(),
+        ExerciseFeature(type="squat", count=0, state="down", rep_phase="down"),
+        exercise_type="squat",
+    )
+
+    assert feature.count == 0
+    assert feature.measurement_quality == "model_disagreement"
+    assert "model_disagreement" in feature.posture_errors
+    assert "disagree" in feedback
+
+
+def test_dual_pose_keeps_fast_only_but_does_not_confirm_count_when_full_fails(monkeypatch):
+    analyzer = _dual_analyzer(monkeypatch, _squat_landmarks("up"), None)
+
+    feature, feedback = analyzer.analyze(
+        _blank_frame(),
+        ExerciseFeature(type="squat", count=0, state="down", rep_phase="down"),
+        exercise_type="squat",
+    )
+
+    assert feature.count == 0
+    assert feature.measurement_quality == "fast_only"
+    assert "fast_only" in feature.posture_errors
+    assert "fast pose" in feedback
 
 
 def test_pushup_counts_elbow_down_to_up_transition(monkeypatch):

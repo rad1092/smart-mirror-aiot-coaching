@@ -37,6 +37,15 @@ def test_pose_model_variant_selects_full_model_without_path_override():
     assert settings.selected_pose_model_path.name == "pose_landmarker_full.task"
 
 
+def test_pose_pipeline_defaults_to_dual_lite_fast_full_accurate():
+    settings = Settings(_env_file=None)
+
+    assert settings.pose_pipeline_mode == "dual"
+    assert settings.pose_model_variant == "full"
+    assert settings.selected_fast_pose_model_path.name == "pose_landmarker_lite.task"
+    assert settings.selected_accurate_pose_model_path.name == "pose_landmarker_full.task"
+
+
 def test_check_model_paths_script_succeeds_without_models():
     result = subprocess.run(
         [sys.executable, "scripts/check_model_paths.py"],

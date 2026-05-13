@@ -15,6 +15,7 @@ class MemoryStore:
         self._sessions: dict[str, Session] = {}
         self._features: dict[str, FeatureSet] = {}
         self._results: dict[str, SessionResultResponse] = {}
+        self._measurement_stats: dict[str, dict[str, int]] = {}
         self._environment = EnvironmentFeature()
 
     def reset(self) -> None:
@@ -22,12 +23,14 @@ class MemoryStore:
             self._sessions.clear()
             self._features.clear()
             self._results.clear()
+            self._measurement_stats.clear()
             self._environment = EnvironmentFeature()
 
     def create_session(self, session: Session) -> Session:
         with self._lock:
             self._sessions[session.session_id] = session
             self._features[session.session_id] = FeatureSet()
+            self._measurement_stats[session.session_id] = self._empty_measurement_stats()
             return session
 
     def get_session(self, session_id: str) -> Session | None:
@@ -65,6 +68,35 @@ class MemoryStore:
             self.touch_session(session_id)
             return features
 
+    def record_exercise_measurement(self, session_id: str, feature: ExerciseFeature) -> dict[str, int]:
+        with self._lock:
+            stats = self._measurement_stats.setdefault(session_id, self._empty_measurement_stats())
+            stats["analyzed_frames"] += 1
+            errors = set(feature.posture_errors)
+            blocking_errors = {
+                "no_person",
+                "target_lost",
+                "person_too_far",
+                "partial_body",
+                "low_confidence",
+                "analysis_failed",
+            }
+            if errors & blocking_errors:
+                stats["blocked_frames"] += 1
+            else:
+                stats["valid_frames"] += 1
+            if "target_lost" in errors:
+                stats["target_lost_frames"] += 1
+            if "model_disagreement" in errors:
+                stats["model_disagreement_frames"] += 1
+            if feature.goal_mismatch:
+                stats["goal_mismatch_frames"] += 1
+            return dict(stats)
+
+    def get_measurement_stats(self, session_id: str) -> dict[str, int]:
+        with self._lock:
+            return dict(self._measurement_stats.get(session_id, self._empty_measurement_stats()))
+
     def set_result(self, result: SessionResultResponse) -> SessionResultResponse:
         with self._lock:
             self._results[result.session_id] = result
@@ -85,3 +117,13 @@ class MemoryStore:
     def get_environment(self) -> EnvironmentFeature:
         with self._lock:
             return self._environment
+
+    def _empty_measurement_stats(self) -> dict[str, int]:
+        return {
+            "analyzed_frames": 0,
+            "valid_frames": 0,
+            "blocked_frames": 0,
+            "target_lost_frames": 0,
+            "model_disagreement_frames": 0,
+            "goal_mismatch_frames": 0,
+        }

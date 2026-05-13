@@ -32,6 +32,8 @@ def _exercise_payload() -> FeaturePayload:
                 detected_type="pushup",
                 exercise_confidence=0.86,
                 goal_mismatch=False,
+                measurement_quality="dual_verified",
+                measurement_confidence=0.82,
                 knee_angle=92.5,
                 back_angle=8.0,
                 rep_phase="down",
@@ -86,6 +88,8 @@ def test_pc2_request_json_contains_only_exercise_contract_fields():
     assert "detected_type" not in exercise_json
     assert "exercise_confidence" not in exercise_json
     assert "goal_mismatch" not in exercise_json
+    assert "measurement_quality" not in exercise_json
+    assert "measurement_confidence" not in exercise_json
     assert "target_signature" not in exercise_json
     assert "classifier_window" not in exercise_json
     assert set(request_json["baseline_diff"]) == {"exercise"}

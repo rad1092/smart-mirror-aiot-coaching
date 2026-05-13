@@ -25,10 +25,14 @@ coach_client = CoachClient(settings)
 feature_builder = FeatureBuilder(sensor_service, baseline_service)
 pose_analyzer = PoseAnalyzer(
     pose_model_path=settings.selected_pose_model_path,
+    fast_pose_model_path=settings.selected_fast_pose_model_path,
+    accurate_pose_model_path=settings.selected_accurate_pose_model_path,
     exercise_thresholds_path=settings.resolve_path(settings.config_exercise_thresholds),
     exercise_rules_path=settings.resolve_path(settings.exercise_rules_path),
     exercise_classifier_path=settings.resolve_path(settings.exercise_classifier_path),
     use_mediapipe_tasks=settings.use_mediapipe_tasks,
+    pose_pipeline_mode=settings.pose_pipeline_mode,
+    accurate_interval=settings.pose_accurate_interval,
     max_poses=settings.max_poses,
 )
 def get_store() -> MemoryStore:

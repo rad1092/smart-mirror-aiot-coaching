@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from app.main import settings
+
 
 def test_health_returns_ok(client):
     response = client.get("/health")
@@ -19,7 +21,7 @@ def test_session_start_returns_session_id_and_ws_url(client):
     assert response.status_code == 200
     body = response.json()
     assert body["session_id"].startswith("sess_")
-    assert body["ws_url"].startswith("ws://127.0.0.1:9000/")
+    assert body["ws_url"].startswith(f"ws://{settings.ws_host}:{settings.port}/")
     assert body["ws_url"].endswith(f"/ws/sessions/{body['session_id']}")
 
 

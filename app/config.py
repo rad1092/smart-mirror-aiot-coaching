@@ -55,9 +55,17 @@ class Settings(BaseSettings):
         "http://localhost:1420,http://127.0.0.1:1420,tauri://localhost"
     )
     use_mediapipe_tasks: bool = True
-    pose_model_variant: Literal["lite", "full"] = "lite"
+    pose_pipeline_mode: Literal["single", "dual"] = "dual"
+    pose_model_variant: Literal["lite", "full"] = "full"
+    pose_fast_model_variant: Literal["lite", "full"] = "lite"
+    pose_accurate_model_variant: Literal["lite", "full"] = "full"
     pose_model_path: Path | None = None
+    pose_fast_model_path: Path | None = None
+    pose_accurate_model_path: Path | None = None
+    pose_accurate_interval: int = Field(default=1, ge=1, le=30)
     max_poses: int = Field(default=3, ge=1, le=8)
+    min_valid_frame_ratio: float = Field(default=0.55, ge=0.0, le=1.0)
+    max_model_disagreement_ratio: float = Field(default=0.30, ge=0.0, le=1.0)
     config_exercise_thresholds: Path = Field(default_factory=default_exercise_thresholds_path)
     exercise_rules_path: Path = Field(default_factory=default_exercise_rules_path)
     exercise_classifier_path: Path = Field(default_factory=default_exercise_classifier_path)
@@ -95,6 +103,18 @@ class Settings(BaseSettings):
         if self.pose_model_path is not None:
             return self.resolve_path(self.pose_model_path)
         return pose_model_path_for_variant(self.pose_model_variant)
+
+    @property
+    def selected_fast_pose_model_path(self) -> Path:
+        if self.pose_fast_model_path is not None:
+            return self.resolve_path(self.pose_fast_model_path)
+        return pose_model_path_for_variant(self.pose_fast_model_variant)
+
+    @property
+    def selected_accurate_pose_model_path(self) -> Path:
+        if self.pose_accurate_model_path is not None:
+            return self.resolve_path(self.pose_accurate_model_path)
+        return pose_model_path_for_variant(self.pose_accurate_model_variant)
 
 
 @lru_cache
