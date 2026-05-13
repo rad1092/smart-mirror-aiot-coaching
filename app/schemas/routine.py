@@ -6,7 +6,6 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-BaselineSlotType = Literal["face_front", "body_front_full"]
 DifficultyLevel = Literal["easy", "normal", "challenge"]
 ExerciseExperience = Literal["beginner", "casual", "consistent"]
 ExerciseGoal = Literal[
@@ -34,7 +33,7 @@ class RecommendationProfile(BaseModel):
 
 class RecommendationBaseline(BaseModel):
     ready: bool = False
-    completed_slots: list[BaselineSlotType] = Field(default_factory=list)
+    completed_slots: list[str] = Field(default_factory=list)
 
 
 class RecommendationRequest(BaseModel):

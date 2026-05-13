@@ -107,9 +107,11 @@ user-source slots:
 - `face_front`
 - `body_front_full`
 
-PC3 does not accept right/left side body baseline slots anymore. The baseline
+PC3 baseline flow no longer includes right/left side body slots. The baseline
 contract is intentionally small: a front profile face checkpoint and a front
 full-body checkpoint are enough before routine planning.
+If an older PC1 build still sends side slot names, PC3 does not store or use
+them for baseline completion.
 
 PC3 also accepts the newer flat routine request documented by PC2, including
 optional `start_date`. PC3 then calls PC2 `POST /api/routine/profile` with a
