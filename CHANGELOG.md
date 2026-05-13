@@ -9,18 +9,17 @@
 - 현재 HEAD: `61e3753 feat: require face detection for profile baseline`
 - 원격 `origin/main`: `61e3753`
 - Git tag: 없음
-- 문서 갱신 시각: `2026-05-13 16:40:36 +09:00`
+- 문서 갱신 시각: `2026-05-13 16:43:52 +09:00`
 
 현재 저장소에는 별도 tag가 없으므로, 아래 주요 커밋들을 실질적인 버전 경계로 봅니다.
 
-## 2026-05-13 16:40:36 +09:00 - 이번 커밋 - 오래된 side baseline 입력을 무시 처리
+## 2026-05-13 16:43:52 +09:00 - 이번 커밋 - baseline 문구 단순화
 
 주요 변경:
 
-- `body_right_full`, `body_left_full`은 PC3 baseline 저장/검증 항목에서 계속 제외.
-- 오래된 PC1이 side slot capture를 보내도 PC3가 서버 오류처럼 터뜨리지 않고 저장 없이 무시.
-- 루틴 요청의 `completed_slots`에 오래된 side slot 문자열이 섞여도 PC3는 그 값을 사용하지 않음.
-- PC3가 실제로 확인하는 baseline 완료 기준은 계속 `face_front`, `body_front_full` 두 개뿐임.
+- README와 PC1 연동 문서의 baseline 설명을 필수 항목 두 개만 남기는 방식으로 단순화.
+- PC3 baseline 완료 기준은 `face_front`, `body_front_full` 두 개로 유지.
+- 별도 예외 처리 설명이나 과거 항목 안내 문구를 제거.
 
 검증:
 
@@ -30,11 +29,10 @@
 
 주요 변경:
 
-- PC3 baseline capture API에서 `body_right_full`, `body_left_full` 슬롯을 제거.
-- 허용 baseline 슬롯을 `face_front`, `body_front_full` 두 개로 고정.
+- PC3 baseline capture API의 기준 슬롯을 두 개로 정리.
+- 허용 baseline 슬롯을 `face_front`, `body_front_full`로 고정.
 - 루틴 추천 전 baseline 검증도 `face_front`, `body_front_full`만 요구하도록 정리.
-- PC1 연동 문서와 README에서 오른쪽/왼쪽 전신 baseline 안내를 제거.
-- PC1 연동 기준에서 오래된 side slot을 제거.
+- PC1 연동 문서와 README의 baseline 안내를 같은 기준으로 정리.
 
 검증:
 

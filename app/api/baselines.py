@@ -55,13 +55,6 @@ async def capture_baseline_slot(
     baseline_service: BaselineService = Depends(get_baseline_service),
 ) -> BaselineCaptureResponse:
     valid_slot_types = {"face_front", "body_front_full"}
-    deprecated_slot_types = {"body_right_full", "body_left_full"}
-    if slot_type in deprecated_slot_types:
-        return BaselineCaptureResponse(
-            valid=False,
-            slot_type=slot_type,
-            reason="Deprecated baseline slot ignored. Use face_front and body_front_full only.",
-        )
     if slot_type not in valid_slot_types:
         raise HTTPException(status_code=400, detail=f"Unknown slot_type: {slot_type!r}")
 

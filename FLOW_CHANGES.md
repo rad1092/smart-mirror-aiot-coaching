@@ -20,22 +20,21 @@ PC1 프론트엔드
 
 현재 구조에서 PC1은 PC2를 직접 호출하지 않습니다. PC3가 PC1과 PC2 사이의 계약 정렬, 검증, 변환, fallback을 담당합니다.
 
-## 2026-05-13 16:40:36 +09:00 - 오래된 side baseline 입력 무시
+## 2026-05-13 16:43:52 +09:00 - baseline 문구 단순화
 
 변경 후 흐름:
 
 ```text
-오래된 PC1이 body_right_full/body_left_full 전송
-  -> PC3는 baseline 저장을 하지 않음
-  -> 루틴 추천 완료 기준에도 쓰지 않음
-  -> 실제 완료 기준은 face_front + body_front_full만 유지
+PC1 baseline capture
+  -> face_front
+  -> body_front_full
+  -> PC3 baseline 완료
 ```
 
 중요한 점:
 
-- PC3 화면/문서/완료 조건에서는 오른쪽/왼쪽 baseline 항목을 삭제한 상태입니다.
-- 예전 PC1 입력이 섞여도 PC3의 실제 baseline 데이터에는 반영하지 않습니다.
-- PC3가 PC2로 보내는 루틴/운동 payload에도 side baseline 정보는 들어가지 않습니다.
+- 문서와 화면 기준은 위 두 항목만 남기는 방향으로 정리합니다.
+- 루틴 추천 전 baseline 검증도 위 두 checkpoint만 확인합니다.
 
 ## 2026-05-13 16:33:56 +09:00 - baseline 슬롯 계약 2개로 축소
 
@@ -54,9 +53,7 @@ PC1 baseline capture
 
 중요한 점:
 
-- PC3가 받는 baseline 슬롯은 `face_front`, `body_front_full` 두 개뿐입니다.
-- `body_right_full`, `body_left_full`은 더 이상 PC3 계약에 없습니다.
-- 오래된 PC1 화면이 오른쪽/왼쪽 슬롯을 보내도 PC3는 저장/검증에 사용하지 않습니다.
+- PC3 baseline 슬롯은 `face_front`, `body_front_full` 두 개입니다.
 - 루틴 추천 전 baseline 검증도 위 두 checkpoint만 확인합니다.
 
 ## 2026-05-13 14:17:01 +09:00 - 얼굴 baseline 흐름 단순화

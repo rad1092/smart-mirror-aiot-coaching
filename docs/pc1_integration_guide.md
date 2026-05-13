@@ -63,12 +63,6 @@ checkpoint before routine planning:
 - `baseline.face.face_front.captured`
 - `baseline.body.body_front_full.captured`
 
-PC3 baseline flow no longer includes `body_right_full` or `body_left_full`.
-Older PC1 flows must remove those side captures and use only `face_front` plus
-`body_front_full`.
-If an older build still sends side slot names, PC3 does not store or use those
-captures for baseline completion.
-
 ## 2. Pre-Exercise Routine Recommendation
 
 ```http
