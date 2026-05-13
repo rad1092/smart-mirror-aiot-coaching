@@ -26,10 +26,18 @@ def _exercise_payload() -> FeaturePayload:
                 state="up",
                 stability_score=0.72,
                 posture_errors=[],
+                person_count=2,
+                target_status="multi_person_detected",
+                target_confidence=0.9,
+                detected_type="pushup",
+                exercise_confidence=0.86,
+                goal_mismatch=False,
                 knee_angle=92.5,
                 back_angle=8.0,
                 rep_phase="down",
                 active_side="LEFT",
+                target_signature={"center_x": 0.5, "center_y": 0.5},
+                classifier_window=["pushup"],
             )
         ),
         baseline_diff={
@@ -72,6 +80,14 @@ def test_pc2_request_json_contains_only_exercise_contract_fields():
     assert "count_right" not in exercise_json
     assert "rep_phase" not in exercise_json
     assert "active_side" not in exercise_json
+    assert "person_count" not in exercise_json
+    assert "target_status" not in exercise_json
+    assert "target_confidence" not in exercise_json
+    assert "detected_type" not in exercise_json
+    assert "exercise_confidence" not in exercise_json
+    assert "goal_mismatch" not in exercise_json
+    assert "target_signature" not in exercise_json
+    assert "classifier_window" not in exercise_json
     assert set(request_json["baseline_diff"]) == {"exercise"}
     assert request_json["baseline_diff"]["exercise"] == {
         "count_change": -2,

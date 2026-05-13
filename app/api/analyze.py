@@ -65,6 +65,17 @@ async def analyze_exercise(
         message["count_left"] = exercise.count_left
     if exercise.count_right is not None:
         message["count_right"] = exercise.count_right
+    for key in (
+        "person_count",
+        "target_status",
+        "target_confidence",
+        "detected_type",
+        "exercise_confidence",
+        "goal_mismatch",
+    ):
+        value = getattr(exercise, key)
+        if value is not None:
+            message[key] = value
     await manager.broadcast(session_id, message)
     return ExerciseAnalyzeResponse(
         session_id=session_id,

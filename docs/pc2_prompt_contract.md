@@ -26,6 +26,7 @@ PC2는 이미지 모델이 아닙니다. PC2는 PC3가 계산한 운동 feature,
 - 전체 landmark list
 - segmentation mask
 - camera stream URL
+- PC1 display-only target/classifier fields: `person_count`, `target_status`, `target_confidence`, `detected_type`, `exercise_confidence`, `goal_mismatch`
 - 계약에 없는 field
 
 ## FeaturePayload

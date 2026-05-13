@@ -6,8 +6,11 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULTS = {
-    "USE_MEDIAPIPE_TASKS": "false",
-    "POSE_MODEL_PATH": "./models/pose/pose_landmarker_lite.task",
+    "USE_MEDIAPIPE_TASKS": "true",
+    "POSE_MODEL_VARIANT": "lite",
+    "POSE_MODEL_PATH": "",
+    "MAX_POSES": "3",
+    "EXERCISE_CLASSIFIER_PATH": "./models/exercise_classifier/exercise_classifier.json",
 }
 
 
@@ -39,6 +42,13 @@ def resolve_model_path(value: str) -> Path:
     return PROJECT_ROOT / path
 
 
+def pose_path_for_variant(variant: str) -> str:
+    normalized = variant.strip().lower()
+    if normalized == "full":
+        return "./models/pose/pose_landmarker_full.task"
+    return "./models/pose/pose_landmarker_lite.task"
+
+
 def truthy(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
@@ -68,8 +78,14 @@ def main() -> int:
     use_tasks = truthy(settings["USE_MEDIAPIPE_TASKS"])
     print(f"Checking model paths using env file: {env_path}")
     print(f"USE_MEDIAPIPE_TASKS={str(use_tasks).lower()}")
+    print(f"POSE_MODEL_VARIANT={settings['POSE_MODEL_VARIANT']}")
+    print(f"MAX_POSES={settings['MAX_POSES']}")
 
-    pose_ok = check_path("pose", settings["POSE_MODEL_PATH"])
+    pose_path = settings["POSE_MODEL_PATH"] or pose_path_for_variant(settings["POSE_MODEL_VARIANT"])
+    pose_ok = check_path("pose", pose_path)
+    check_path("pose lite asset", "./models/pose/pose_landmarker_lite.task")
+    check_path("pose full asset", "./models/pose/pose_landmarker_full.task")
+    check_path("exercise classifier", settings["EXERCISE_CLASSIFIER_PATH"])
 
     if use_tasks and not pose_ok:
         print("[WARN] USE_MEDIAPIPE_TASKS=true but pose model is missing.")

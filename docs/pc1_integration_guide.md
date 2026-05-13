@@ -107,7 +107,13 @@ PC3가 보내는 메시지:
   "state": "up",
   "feedback": "Keep the movement steady.",
   "posture_errors": ["knees_caving_in"],
-  "stability_score": 0.74
+  "stability_score": 0.74,
+  "person_count": 2,
+  "target_status": "multi_person_detected",
+  "target_confidence": 0.91,
+  "detected_type": "squat",
+  "exercise_confidence": 0.88,
+  "goal_mismatch": false
 }
 ```
 

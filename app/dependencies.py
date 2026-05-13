@@ -24,10 +24,12 @@ trigger_engine = TriggerEngine()
 coach_client = CoachClient(settings)
 feature_builder = FeatureBuilder(sensor_service, baseline_service)
 pose_analyzer = PoseAnalyzer(
-    pose_model_path=settings.resolve_path(settings.pose_model_path),
+    pose_model_path=settings.selected_pose_model_path,
     exercise_thresholds_path=settings.resolve_path(settings.config_exercise_thresholds),
     exercise_rules_path=settings.resolve_path(settings.exercise_rules_path),
+    exercise_classifier_path=settings.resolve_path(settings.exercise_classifier_path),
     use_mediapipe_tasks=settings.use_mediapipe_tasks,
+    max_poses=settings.max_poses,
 )
 def get_store() -> MemoryStore:
     return store

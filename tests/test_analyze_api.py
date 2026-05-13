@@ -144,6 +144,12 @@ def test_exercise_websocket_includes_side_counts_for_paired_exercises(client, im
             state="up",
             stability_score=0.8,
             posture_errors=[],
+            person_count=2,
+            target_status="multi_person_detected",
+            target_confidence=0.91,
+            detected_type="knee_raise",
+            exercise_confidence=0.87,
+            goal_mismatch=False,
         )
     )
     app.dependency_overrides[get_pose_analyzer] = lambda: fake
@@ -161,8 +167,15 @@ def test_exercise_websocket_includes_side_counts_for_paired_exercises(client, im
             message = websocket.receive_json()
             assert message["count_left"] == 2
             assert message["count_right"] == 1
+            assert message["person_count"] == 2
+            assert message["target_status"] == "multi_person_detected"
+            assert message["target_confidence"] == 0.91
+            assert message["detected_type"] == "knee_raise"
+            assert message["exercise_confidence"] == 0.87
+            assert message["goal_mismatch"] is False
             assert response.json()["exercise"]["count_left"] == 2
             assert response.json()["exercise"]["count_right"] == 1
+            assert response.json()["exercise"]["target_status"] == "multi_person_detected"
     finally:
         app.dependency_overrides.pop(get_pose_analyzer, None)
 

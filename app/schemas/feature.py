@@ -17,6 +17,12 @@ class ExerciseFeature(BaseModel):
     state: ExerciseState = "idle"
     stability_score: float = Field(default=0.0, ge=0.0, le=1.0)
     posture_errors: list[str] = Field(default_factory=list)
+    person_count: int | None = None
+    target_status: str | None = None
+    target_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    detected_type: str | None = None
+    exercise_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    goal_mismatch: bool | None = None
     count_left: int | None = None
     count_right: int | None = None
     squat_depth: float | None = None
@@ -26,6 +32,8 @@ class ExerciseFeature(BaseModel):
     tempo: str | None = None
     rep_phase: str | None = None
     active_side: str | None = None
+    target_signature: dict[str, float] | None = Field(default=None, exclude=True)
+    classifier_window: list[str] = Field(default_factory=list, exclude=True)
 
 
 class FeatureSet(BaseModel):

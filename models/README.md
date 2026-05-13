@@ -4,9 +4,10 @@ PC3 is exercise-only. The runtime uses the MediaPipe Pose Landmarker Lite model 
 
 ```text
 models/pose/pose_landmarker_lite.task
+models/pose/pose_landmarker_full.task
 ```
 
-This pose model is committed to the repository because PC3 needs it to run real exercise analysis after a fresh clone.
+These pose models are committed to the repository because PC3 needs them to run real exercise analysis after a fresh clone. Lite is the default runtime model. Full is available for accuracy comparison and low-confidence webcam cases.
 
 Other model and weight formats remain ignored by `models/.gitignore` unless they are explicitly allowed. The removed face and segmentation features do not require model files.
 
@@ -14,7 +15,8 @@ Other model and weight formats remain ignored by `models/.gitignore` unless they
 
 ```env
 USE_MEDIAPIPE_TASKS=true
-POSE_MODEL_PATH=./models/pose/pose_landmarker_lite.task
+POSE_MODEL_VARIANT=lite
+MAX_POSES=3
 ```
 
 Check the local model path with:

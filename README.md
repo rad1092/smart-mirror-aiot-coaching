@@ -36,11 +36,15 @@ HOST=127.0.0.1
 PORT=9000
 CORS_ALLOW_ORIGINS=http://localhost:1420,http://127.0.0.1:1420,tauri://localhost
 
-USE_MEDIAPIPE_TASKS=false
-POSE_MODEL_PATH=./models/pose/pose_landmarker_lite.task
+USE_MEDIAPIPE_TASKS=true
+POSE_MODEL_VARIANT=lite
+MAX_POSES=3
+# Optional explicit override. If unset, POSE_MODEL_VARIANT selects the model.
+# POSE_MODEL_PATH=./models/pose/pose_landmarker_lite.task
 
 CONFIG_EXERCISE_THRESHOLDS=./config/exercise_thresholds.json
 EXERCISE_RULES_PATH=./data/exercise_rules.json
+EXERCISE_CLASSIFIER_PATH=./models/exercise_classifier/exercise_classifier.json
 BASELINE_DB_PATH=./data/baselines.sqlite3
 ```
 
@@ -99,7 +103,13 @@ WebSocket `exercise_update` 예시:
   "state": "up",
   "feedback": "Keep the movement steady.",
   "posture_errors": [],
-  "stability_score": 0.82
+  "stability_score": 0.82,
+  "person_count": 1,
+  "target_status": "tracking",
+  "target_confidence": 0.91,
+  "detected_type": "squat",
+  "exercise_confidence": 0.88,
+  "goal_mismatch": false
 }
 ```
 

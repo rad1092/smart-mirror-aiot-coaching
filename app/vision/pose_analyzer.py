@@ -9,6 +9,7 @@ from typing import Any
 from app.exercise_types import normalize_exercise_type
 from app.schemas.feature import ExerciseFeature
 from app.utils.json_loader import load_json_file
+from app.vision.exercise_classifier import ExerciseClassifier
 
 try:
     import cv2
@@ -161,10 +162,14 @@ class PoseAnalyzer:
         pose_model_path: str | Path | None = None,
         exercise_thresholds_path: str | Path | None = None,
         exercise_rules_path: str | Path | None = None,
+        exercise_classifier_path: str | Path | None = None,
         use_mediapipe_tasks: bool = False,
+        max_poses: int = 3,
     ) -> None:
         self._thresholds = load_json_file(exercise_thresholds_path, self._DEFAULT_THRESHOLDS)
         self._exercise_rules = load_json_file(exercise_rules_path, {})
+        self._exercise_classifier = ExerciseClassifier(exercise_classifier_path)
+        self._max_poses = max(1, int(max_poses))
         self._backend = "fallback"
         self._landmarker = None
         self._mp = None
@@ -202,7 +207,7 @@ class PoseAnalyzer:
             options = vision.PoseLandmarkerOptions(
                 base_options=base_options,
                 running_mode=vision.RunningMode.IMAGE,
-                num_poses=1,
+                num_poses=self._max_poses,
                 min_pose_detection_confidence=self._min_landmark_visibility(),
                 min_pose_presence_confidence=self._min_landmark_visibility(),
                 min_tracking_confidence=self._min_landmark_visibility(),
@@ -230,7 +235,45 @@ class PoseAnalyzer:
         if previous is None or previous.type != exercise_type:
             previous = ExerciseFeature(type=exercise_type)
 
-        landmarks = self._detect_landmarks(frame)
+        detected_landmarks = self._detect_landmarks(frame)
+        pose_candidates = self._pose_candidates(detected_landmarks)
+        person_count = len(pose_candidates)
+        if not pose_candidates:
+            target_status = "target_lost" if previous.target_signature else "no_person"
+            return self._idle_feature(
+                previous,
+                exercise_type,
+                posture_errors=["no_person"],
+                feedback="몸 전체가 화면에 보이도록 조금 뒤로 이동해 주세요.",
+                clear_phase=True,
+                person_count=0,
+                target_status=target_status,
+                target_confidence=0.0,
+            )
+
+        selection = self._select_target_candidate(pose_candidates, previous)
+        if selection["landmarks"] is None:
+            posture_errors = ["target_lost"]
+            if person_count > 1:
+                posture_errors.append("multi_person_detected")
+            return self._idle_feature(
+                previous,
+                exercise_type,
+                posture_errors=posture_errors,
+                feedback="Target user was lost. Keep the locked user in frame or restart the session.",
+                clear_phase=True,
+                person_count=person_count,
+                target_status="target_lost",
+                target_confidence=selection["confidence"],
+            )
+
+        landmarks = selection["landmarks"]
+        target_updates = {
+            "person_count": person_count,
+            "target_status": selection["status"],
+            "target_confidence": selection["confidence"],
+            "target_signature": selection["signature"],
+        }
         if not landmarks:
             return self._idle_feature(
                 previous,
@@ -238,6 +281,7 @@ class PoseAnalyzer:
                 posture_errors=["no_person"],
                 feedback="몸 전체가 화면에 보이도록 조금 뒤로 이동해 주세요.",
                 clear_phase=True,
+                **target_updates,
             )
 
         required = self._REQUIRED_LANDMARKS.get(exercise_type, self._REQUIRED_LANDMARKS["squat"])
@@ -248,6 +292,7 @@ class PoseAnalyzer:
                 posture_errors=["person_too_far"],
                 feedback="몸이 너무 작게 보여요. 카메라에 조금 더 가까이 서 주세요.",
                 clear_phase=True,
+                **target_updates,
             )
         if self._has_partial_body(landmarks, required):
             return self._idle_feature(
@@ -256,25 +301,41 @@ class PoseAnalyzer:
                 posture_errors=["low_confidence", "partial_body"],
                 feedback="몸 전체가 화면 안에 들어오도록 위치를 조정해 주세요.",
                 clear_phase=True,
+                **target_updates,
             )
         if not self._landmarks_are_confident(landmarks, required, exercise_type):
             return self._idle_feature(
                 previous,
                 exercise_type,
                 posture_errors=["low_confidence"],
-                feedback="조명과 자세를 조정해 관절이 선명하게 보이게 해 주세요.",
+                feedback="Low pose confidence. Adjust lighting and keep joints visible.",
+                **target_updates,
             )
-
         try:
             if exercise_type == "pushup":
-                return self._analyze_pushup(landmarks, previous)
+                feature, feedback = self._analyze_pushup(landmarks, previous)
+                return self._with_target_and_classification(
+                    feature, previous, landmarks, exercise_type, target_updates
+                ), feedback
             if exercise_type == "lunge":
-                return self._analyze_lunge(landmarks, previous)
+                feature, feedback = self._analyze_lunge(landmarks, previous)
+                return self._with_target_and_classification(
+                    feature, previous, landmarks, exercise_type, target_updates
+                ), feedback
             if exercise_type == "knee_raise":
-                return self._analyze_knee_raise(landmarks, previous)
+                feature, feedback = self._analyze_knee_raise(landmarks, previous)
+                return self._with_target_and_classification(
+                    feature, previous, landmarks, exercise_type, target_updates
+                ), feedback
             if exercise_type == "jumping_jack":
-                return self._analyze_jumping_jack(landmarks, previous)
-            return self._analyze_squat(landmarks, previous)
+                feature, feedback = self._analyze_jumping_jack(landmarks, previous)
+                return self._with_target_and_classification(
+                    feature, previous, landmarks, exercise_type, target_updates
+                ), feedback
+            feature, feedback = self._analyze_squat(landmarks, previous)
+            return self._with_target_and_classification(
+                feature, previous, landmarks, exercise_type, target_updates
+            ), feedback
         except Exception:
             logger.exception("Pose analysis failed during landmark processing. Returning fallback.")
             return self._idle_feature(
@@ -549,12 +610,14 @@ class PoseAnalyzer:
         posture_errors: list[str],
         feedback: str,
         clear_phase: bool = False,
+        **extra_updates,
     ) -> tuple[ExerciseFeature, str]:
         update = {
             "type": exercise_type,
             "state": "idle",
             "posture_errors": posture_errors,
         }
+        update.update(extra_updates)
         if clear_phase:
             update["rep_phase"] = None
             update["active_side"] = None
@@ -603,6 +666,125 @@ class PoseAnalyzer:
             return count, count_left, count_right, "up", None
         return count, count_left, count_right, phase, pending_side
 
+    def _with_target_and_classification(
+        self,
+        feature: ExerciseFeature,
+        previous: ExerciseFeature,
+        landmarks,
+        exercise_type: str,
+        target_updates: dict[str, Any],
+    ) -> ExerciseFeature:
+        detected_type, confidence, window = self._exercise_classifier.classify(
+            landmarks,
+            previous.classifier_window,
+        )
+        goal_mismatch = detected_type != exercise_type and confidence >= 0.55
+        return feature.model_copy(
+            update={
+                **target_updates,
+                "detected_type": detected_type,
+                "exercise_confidence": confidence,
+                "goal_mismatch": goal_mismatch,
+                "classifier_window": window,
+            }
+        )
+
+    def _pose_candidates(self, detected_landmarks) -> list:
+        if not detected_landmarks:
+            return []
+        first = detected_landmarks[0]
+        if hasattr(first, "x") and hasattr(first, "y"):
+            return [detected_landmarks]
+        return [candidate for candidate in detected_landmarks if candidate]
+
+    def _select_target_candidate(self, candidates: list, previous: ExerciseFeature) -> dict[str, Any]:
+        if not previous.target_signature:
+            selected = candidates[0]
+            return {
+                "landmarks": selected,
+                "status": "target_locked",
+                "confidence": 1.0,
+                "signature": self._target_signature(selected),
+            }
+
+        scored = [
+            (self._target_match_confidence(candidate, previous.target_signature), candidate)
+            for candidate in candidates
+        ]
+        confidence, selected = max(scored, key=lambda item: item[0])
+        if confidence < 0.45:
+            return {
+                "landmarks": None,
+                "status": "target_lost",
+                "confidence": round(max(0.0, confidence), 3),
+                "signature": previous.target_signature,
+            }
+        status = "multi_person_detected" if len(candidates) > 1 else "tracking"
+        return {
+            "landmarks": selected,
+            "status": status,
+            "confidence": round(confidence, 3),
+            "signature": self._target_signature(selected),
+        }
+
+    def _initial_target_score(self, landmarks) -> float:
+        signature = self._target_signature(landmarks)
+        center_distance = abs(signature["center_x"] - 0.5)
+        return signature["height"] + (signature["width"] * 0.4) - center_distance
+
+    def _target_match_confidence(self, landmarks, signature: dict[str, float]) -> float:
+        current = self._target_signature(landmarks)
+        center_delta = math.hypot(
+            current["center_x"] - signature["center_x"],
+            current["center_y"] - signature["center_y"],
+        )
+        size_delta = abs(current["height"] - signature["height"]) + abs(current["width"] - signature["width"])
+        shoulder_delta = abs(current["shoulder_width"] - signature["shoulder_width"])
+        hip_delta = abs(current["hip_width"] - signature["hip_width"])
+        keypoint_delta = self._keypoint_distance(landmarks, signature)
+        penalty = (center_delta * 1.2) + (size_delta * 0.8) + (shoulder_delta * 0.8) + (hip_delta * 0.8) + (keypoint_delta * 0.6)
+        return self._clamp(1.0 - penalty)
+
+    def _target_signature(self, landmarks) -> dict[str, float]:
+        names = ["LEFT_SHOULDER", "RIGHT_SHOULDER", "LEFT_HIP", "RIGHT_HIP"]
+        points = [landmarks[self._LANDMARK_INDEX[name]] for name in names]
+        xs = [point.x for point in points]
+        ys = [point.y for point in points]
+        signature = {
+            "center_x": (min(xs) + max(xs)) / 2,
+            "center_y": (min(ys) + max(ys)) / 2,
+            "width": max(xs) - min(xs),
+            "height": max(ys) - min(ys),
+            "shoulder_width": self._width(landmarks, "SHOULDER"),
+            "hip_width": self._width(landmarks, "HIP"),
+        }
+        for name in names:
+            landmark = landmarks[self._LANDMARK_INDEX[name]]
+            signature[f"{name.lower()}_x"] = landmark.x
+            signature[f"{name.lower()}_y"] = landmark.y
+        return {key: round(float(value), 4) for key, value in signature.items()}
+
+    def _keypoint_distance(self, landmarks, signature: dict[str, float]) -> float:
+        names = [
+            "LEFT_SHOULDER",
+            "RIGHT_SHOULDER",
+            "LEFT_HIP",
+            "RIGHT_HIP",
+            "LEFT_KNEE",
+            "RIGHT_KNEE",
+            "LEFT_ANKLE",
+            "RIGHT_ANKLE",
+        ]
+        distances = []
+        for name in names:
+            landmark = landmarks[self._LANDMARK_INDEX[name]]
+            previous_x = signature.get(f"{name.lower()}_x")
+            previous_y = signature.get(f"{name.lower()}_y")
+            if previous_x is None or previous_y is None:
+                continue
+            distances.append(math.hypot(landmark.x - previous_x, landmark.y - previous_y))
+        return sum(distances) / len(distances) if distances else 0.0
+
     def _detect_landmarks(self, frame):
         if cv2 is None or self._landmarker is None or self._mp is None:
             return None
@@ -612,7 +794,7 @@ class PoseAnalyzer:
             result = self._landmarker.detect(mp_image)
             if not result.pose_landmarks:
                 return None
-            return result.pose_landmarks[0]
+            return list(result.pose_landmarks)
         except Exception:
             logger.exception("MediaPipe pose inference failed. Returning fallback for this request.")
             self._backend = "fallback"

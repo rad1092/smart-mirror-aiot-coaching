@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -23,12 +24,23 @@ def default_pose_model_path() -> Path:
     return project_root() / "models" / "pose" / "pose_landmarker_lite.task"
 
 
+def pose_model_path_for_variant(variant: str) -> Path:
+    normalized = variant.strip().lower()
+    if normalized == "full":
+        return project_root() / "models" / "pose" / "pose_landmarker_full.task"
+    return default_pose_model_path()
+
+
 def default_exercise_thresholds_path() -> Path:
     return project_root() / "config" / "exercise_thresholds.json"
 
 
 def default_exercise_rules_path() -> Path:
     return project_root() / "data" / "exercise_rules.json"
+
+
+def default_exercise_classifier_path() -> Path:
+    return project_root() / "models" / "exercise_classifier" / "exercise_classifier.json"
 
 
 class Settings(BaseSettings):
@@ -42,10 +54,13 @@ class Settings(BaseSettings):
     cors_allow_origins: str = (
         "http://localhost:1420,http://127.0.0.1:1420,tauri://localhost"
     )
-    use_mediapipe_tasks: bool = False
-    pose_model_path: Path = Field(default_factory=default_pose_model_path)
+    use_mediapipe_tasks: bool = True
+    pose_model_variant: Literal["lite", "full"] = "lite"
+    pose_model_path: Path | None = None
+    max_poses: int = Field(default=3, ge=1, le=8)
     config_exercise_thresholds: Path = Field(default_factory=default_exercise_thresholds_path)
     exercise_rules_path: Path = Field(default_factory=default_exercise_rules_path)
+    exercise_classifier_path: Path = Field(default_factory=default_exercise_classifier_path)
     baseline_path: Path = Field(default_factory=default_baseline_path)
     baseline_db_path: Path = Field(default_factory=default_baseline_db_path)
 
@@ -74,6 +89,12 @@ class Settings(BaseSettings):
         if value.is_absolute():
             return value
         return project_root() / value
+
+    @property
+    def selected_pose_model_path(self) -> Path:
+        if self.pose_model_path is not None:
+            return self.resolve_path(self.pose_model_path)
+        return pose_model_path_for_variant(self.pose_model_variant)
 
 
 @lru_cache

@@ -4,8 +4,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from app.schemas.feature import ExerciseFeature
+from app.vision.exercise_classifier import ExerciseClassifier
 from app.vision.pose_analyzer import PoseAnalyzer
 
 
@@ -127,6 +129,18 @@ def _partial_body_landmarks() -> list[Landmark]:
     landmarks = _base_landmarks()
     landmarks[27] = Landmark(0.98, 0.90)
     return landmarks
+
+
+def _shift_landmarks(landmarks: list[Landmark], dx: float, dy: float = 0.0) -> list[Landmark]:
+    return [
+        Landmark(
+            max(0.0, min(1.0, landmark.x + dx)),
+            max(0.0, min(1.0, landmark.y + dy)),
+            landmark.visibility,
+            landmark.presence,
+        )
+        for landmark in landmarks
+    ]
 
 
 def _knee_raise_landmarks(state: str) -> list[Landmark]:
@@ -368,6 +382,99 @@ def test_jumping_jack_counts_closed_to_open_transition(monkeypatch):
     assert feature.state == "up"
     assert feature.count == 1
     assert _has_no_mojibake(feedback)
+
+
+def test_target_lock_keeps_first_user_when_second_person_enters(monkeypatch):
+    analyzer = _analyzer_with_landmarks(monkeypatch, _squat_landmarks("down"))
+
+    locked_feature, _ = analyzer.analyze(
+        _blank_frame(),
+        ExerciseFeature(type="squat", count=0, state="up"),
+        exercise_type="squat",
+    )
+    assert locked_feature.target_signature is not None
+    assert locked_feature.target_status == "target_locked"
+
+    distractor = _shift_landmarks(_squat_landmarks("down"), 0.28)
+    target_up = _squat_landmarks("up")
+    monkeypatch.setattr(analyzer, "_detect_landmarks", lambda frame: [distractor, target_up])
+
+    feature, _ = analyzer.analyze(_blank_frame(), locked_feature, exercise_type="squat")
+
+    assert feature.target_status == "multi_person_detected"
+    assert feature.person_count == 2
+    assert feature.target_confidence and feature.target_confidence > 0.7
+    assert feature.count == 1
+
+
+def test_target_lost_does_not_switch_to_other_person(monkeypatch):
+    analyzer = _analyzer_with_landmarks(monkeypatch, _squat_landmarks("down"))
+    locked_feature, _ = analyzer.analyze(
+        _blank_frame(),
+        ExerciseFeature(type="squat", count=2, state="down", rep_phase="down"),
+        exercise_type="squat",
+    )
+
+    other_person = _shift_landmarks(_squat_landmarks("up"), 0.34)
+    monkeypatch.setattr(analyzer, "_detect_landmarks", lambda frame: [other_person])
+    feature, _ = analyzer.analyze(_blank_frame(), locked_feature, exercise_type="squat")
+
+    assert feature.target_status == "target_lost"
+    assert feature.count == locked_feature.count
+    assert feature.target_signature == locked_feature.target_signature
+    assert "target_lost" in feature.posture_errors
+
+
+def test_target_reconnects_when_original_user_returns(monkeypatch):
+    analyzer = _analyzer_with_landmarks(monkeypatch, _squat_landmarks("down"))
+    locked_feature, _ = analyzer.analyze(
+        _blank_frame(),
+        ExerciseFeature(type="squat", count=0, state="down", rep_phase="down"),
+        exercise_type="squat",
+    )
+
+    monkeypatch.setattr(analyzer, "_detect_landmarks", lambda frame: [_shift_landmarks(_squat_landmarks("up"), 0.34)])
+    lost_feature, _ = analyzer.analyze(_blank_frame(), locked_feature, exercise_type="squat")
+    assert lost_feature.target_status == "target_lost"
+
+    monkeypatch.setattr(analyzer, "_detect_landmarks", lambda frame: [_squat_landmarks("up")])
+    reconnected_feature, _ = analyzer.analyze(_blank_frame(), lost_feature, exercise_type="squat")
+
+    assert reconnected_feature.target_status == "tracking"
+    assert reconnected_feature.target_confidence and reconnected_feature.target_confidence > 0.7
+
+
+@pytest.mark.parametrize(
+    ("expected", "landmarks"),
+    [
+        ("squat", _squat_landmarks("down")),
+        ("pushup", _pushup_landmarks("down")),
+        ("lunge", _lunge_landmarks("down_left")),
+        ("knee_raise", _knee_raise_landmarks("left_up")),
+        ("jumping_jack", _jumping_jack_landmarks("open")),
+    ],
+)
+def test_exercise_classifier_detects_five_supported_exercises(expected, landmarks):
+    classifier = ExerciseClassifier(Path("models/exercise_classifier/exercise_classifier.json"))
+
+    detected_type, confidence = classifier.classify_frame(landmarks)
+
+    assert detected_type == expected
+    assert confidence > 0
+
+
+def test_goal_mismatch_is_reported_when_detected_exercise_differs(monkeypatch):
+    analyzer = _analyzer_with_landmarks(monkeypatch, _jumping_jack_landmarks("open"))
+
+    feature, _ = analyzer.analyze(
+        _blank_frame(),
+        ExerciseFeature(type="squat", count=0, state="idle"),
+        exercise_type="squat",
+    )
+
+    assert feature.detected_type == "jumping_jack"
+    assert feature.exercise_confidence and feature.exercise_confidence >= 0.55
+    assert feature.goal_mismatch is True
 
 
 def test_pose_analyzer_feedback_for_posture_errors_has_no_mojibake():
