@@ -6,14 +6,32 @@
 
 - 현재 브랜치: `main`
 - 원격 저장소: `origin=https://github.com/rad1092/smart-mirror-aiot-coaching.git`
-- 현재 HEAD: `3f418a8 feat: align pc3 routine proxy with pc2 schedule contract`
-- 원격 `origin/main`: `3f418a8c31407a79178e654224c835e6d0b34492`
+- 현재 HEAD: `60dd82a docs: add change tracking docs and skill rule`
+- 원격 `origin/main`: `60dd82a5afdc4dd8363f544d89587fa6238ebcd1`
 - Git tag: 없음
-- 문서 갱신 시각: `2026-05-13 12:01:16 +09:00`
+- 문서 갱신 시각: `2026-05-13 14:17:01 +09:00`
 
 현재 저장소에는 별도 tag가 없으므로, 아래 주요 커밋들을 실질적인 버전 경계로 봅니다.
 
-## 2026-05-13 12:01:16 +09:00 - 이번 커밋 - 변경 이력/흐름 문서와 SKILL 규칙 추가
+## 2026-05-13 14:17:01 +09:00 - 이번 커밋 - 얼굴 baseline을 프로필 사진용 얼굴 검출로 단순화
+
+주요 변경:
+
+- PC3 `face_front` baseline을 신원 인증/얼굴 분석이 아니라 프로필 사진용 정면 얼굴 체크로 정리.
+- 기존 단순 밝기 체크 대신 OpenCV frontal face detector로 얼굴이 하나 이상 보일 때만 `face_front` 저장.
+- 저장되는 face baseline에는 `captured`, `brightness`, `face_detected`, `face_count`만 남김.
+- body baseline 3슬롯은 기존처럼 MediaPipe pose/full-body 검증 유지.
+- PC2 요청에는 얼굴 feature를 보내지 않는 기존 exercise-only 정책 유지.
+- README와 PC1 연동 문서에 `face_front`의 의미를 명확히 설명.
+
+검증:
+
+- `uv run --with-requirements requirements.txt python -m pytest tests/test_baseline_api.py tests/test_routines_api.py -q`
+  - `19 passed`
+- `uv run --with-requirements requirements.txt python -m pytest -q`
+  - `74 passed`
+
+## 2026-05-13 12:01:47 +09:00 - 60dd82a - 변경 이력/흐름 문서와 SKILL 규칙 추가
 
 주요 변경:
 

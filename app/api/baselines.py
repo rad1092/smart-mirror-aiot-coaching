@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+import cv2
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from app.baseline.baseline_service import BaselineService
@@ -63,16 +66,28 @@ async def capture_baseline_slot(
 
     mean_brightness = float(frame.mean()) / 255.0
     if slot_type == "face_front":
-        valid = mean_brightness > 0.15
+        face_boxes = _detect_profile_faces(frame) if mean_brightness > 0.03 else []
+        valid = bool(face_boxes)
         if valid:
             baseline_service.upsert_baseline(
                 user_id,
-                {"face": {"face_front": {"captured": True, "brightness": round(mean_brightness, 3)}}},
+                {
+                    "face": {
+                        "face_front": {
+                            "captured": True,
+                            "brightness": round(mean_brightness, 3),
+                            "face_detected": True,
+                            "face_count": len(face_boxes),
+                        }
+                    }
+                },
             )
         return BaselineCaptureResponse(
             valid=valid,
             slot_type=slot_type,
-            reason=None if valid else "Frame is too dark. Check the room lighting.",
+            reason=None
+            if valid
+            else "Face is not visible. Take a simple front-facing profile photo with a little more light.",
         )
 
     if pose_analyzer.use_mediapipe:
@@ -98,3 +113,31 @@ async def capture_baseline_slot(
         slot_type=slot_type,
         reason=None if valid else "Frame is too dark. Check the room lighting.",
     )
+
+
+def _detect_profile_faces(frame) -> list[tuple[int, int, int, int]]:
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    gray = cv2.equalizeHist(gray)
+    height, width = gray.shape[:2]
+    min_size = max(24, min(width, height) // 12)
+    face_boxes: list[tuple[int, int, int, int]] = []
+    cascade_names = [
+        "haarcascade_frontalface_default.xml",
+        "haarcascade_frontalface_alt2.xml",
+    ]
+    for cascade_name in cascade_names:
+        cascade_path = Path(cv2.data.haarcascades) / cascade_name
+        if not cascade_path.exists():
+            continue
+        classifier = cv2.CascadeClassifier(str(cascade_path))
+        if classifier.empty():
+            continue
+        detected = classifier.detectMultiScale(
+            gray,
+            scaleFactor=1.08,
+            minNeighbors=3,
+            minSize=(min_size, min_size),
+        )
+        if len(detected):
+            face_boxes.extend(tuple(map(int, box)) for box in detected)
+    return face_boxes

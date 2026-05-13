@@ -47,6 +47,10 @@ Response:
 PC3 does not store the original image. It stores validated baseline measurements
 and slot checkpoints.
 
+`face_front` is required as a simple profile-photo checkpoint only. PC3 accepts
+it when a front-facing face is visible in a decodable, non-dark image; it does
+not perform identity recognition or send face features to PC2.
+
 Baseline status:
 
 ```http

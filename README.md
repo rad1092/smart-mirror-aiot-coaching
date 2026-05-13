@@ -89,6 +89,10 @@ Response:
 PC3 stores validated baseline measurements and slot checkpoints, not the raw
 source images.
 
+`face_front` is only a simple profile-photo checkpoint. PC3 checks that a
+front-facing face is visible in a decodable, non-dark frame; it does not run
+identity recognition or send face features to PC2.
+
 ### Pre-Exercise Routine
 
 ```http

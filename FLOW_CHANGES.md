@@ -20,6 +20,30 @@ PC1 프론트엔드
 
 현재 구조에서 PC1은 PC2를 직접 호출하지 않습니다. PC3가 PC1과 PC2 사이의 계약 정렬, 검증, 변환, fallback을 담당합니다.
 
+## 2026-05-13 14:17:01 +09:00 - 얼굴 baseline 흐름 단순화
+
+변경 후 baseline 흐름:
+
+```text
+PC1 baseline capture
+  -> face_front
+      -> PC3가 이미지 decode
+      -> 너무 어둡지 않은지 확인
+      -> 정면 얼굴 1개 이상 검출
+      -> 프로필 사진용 checkpoint 저장
+  -> body_front_full / body_right_full / body_left_full
+      -> PC3가 MediaPipe pose/full-body visibility 검증
+      -> body checkpoint 저장
+```
+
+중요한 점:
+
+- `face_front`는 계속 baseline 필수 슬롯입니다.
+- `face_front`는 얼굴 신원 인증이나 상세 얼굴 분석이 아닙니다.
+- PC3는 얼굴이 화면에 보이는지만 확인해 헬스장 회원 프로필 사진 같은 checkpoint로 저장합니다.
+- PC2 운동/루틴 요청에는 얼굴 feature를 보내지 않습니다.
+- body baseline과 운동 자세 분석 흐름은 기존대로 유지됩니다.
+
 ## 2026-05-13 12:01:16 +09:00 - 변경 문서 관리 흐름 추가
 
 런타임 흐름 영향:

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import cv2
+import numpy as np
+
+from app.api import baselines as baselines_api
 from app.dependencies import get_pose_analyzer
 
 
@@ -128,6 +132,48 @@ def test_capture_baseline_body_rejects_low_quality_pose_without_saving(client, i
         "reason": "Pose checks disagree.",
     }
     baseline = client.get("/api/baselines/users/rejected_user").json()
+    assert baseline["source"] == "default"
+
+
+def test_capture_face_front_requires_detected_profile_face(client, monkeypatch):
+    monkeypatch.setattr(baselines_api, "_detect_profile_faces", lambda frame: [(10, 10, 40, 40)])
+    image = np.full((80, 80, 3), 20, dtype=np.uint8)
+    success, buffer = cv2.imencode(".jpg", image)
+    assert success
+
+    response = client.post(
+        "/api/baselines/users/profile_face_user/capture",
+        data={"slot_type": "face_front"},
+        files={"file": ("face.jpg", buffer.tobytes(), "image/jpeg")},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "valid": True,
+        "slot_type": "face_front",
+        "reason": None,
+    }
+    baseline = client.get("/api/baselines/users/profile_face_user").json()
+    assert baseline["source"] == "user"
+    assert baseline["baseline"]["face"]["face_front"]["captured"] is True
+    assert baseline["baseline"]["face"]["face_front"]["face_detected"] is True
+    assert baseline["baseline"]["face"]["face_front"]["face_count"] == 1
+
+
+def test_capture_face_front_rejects_when_no_face_detected(client, image_bytes, monkeypatch):
+    monkeypatch.setattr(baselines_api, "_detect_profile_faces", lambda frame: [])
+
+    response = client.post(
+        "/api/baselines/users/no_face_user/capture",
+        data={"slot_type": "face_front"},
+        files={"file": ("face.jpg", image_bytes, "image/jpeg")},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["valid"] is False
+    assert response.json()["slot_type"] == "face_front"
+    assert "Face is not visible" in response.json()["reason"]
+    baseline = client.get("/api/baselines/users/no_face_user").json()
     assert baseline["source"] == "default"
 
 
