@@ -1,37 +1,40 @@
-# PC1 연동 가이드
+# PC1 Integration Guide
 
-PC1은 운동 전용 스마트미러 UI이고, PC3는 baseline 검증, 운동 frame 분석, WebSocket 실시간 feedback, session 종료 결과를 제공합니다.
+PC1 is the exercise-only frontend. PC3 provides baseline validation, pre-exercise
+routine planning, pose analysis, realtime feedback, and post-exercise coaching
+bridging.
 
 ## Base URL
 
-로컬 개발 기본값:
+Local development:
 
 ```text
 http://127.0.0.1:9000
 ```
 
-PC1이 다른 PC에서 실행되면 PC3 `.env`에서 다음을 설정합니다.
+When PC1 runs on another computer, start PC3 on all interfaces and expose the
+WebSocket host:
 
 ```env
 HOST=0.0.0.0
 WS_PUBLIC_HOST=<PC3_LAN_IP>
 ```
 
-## Quick Baseline
+PC1 should call PC3, not PC2, for the routine recommendation flow.
 
-PC1 `BaselineSetupPage`는 각 slot마다 캡처 이미지를 PC3로 보냅니다.
+## 1. Baseline Capture
 
 ```http
 POST /api/baselines/users/{user_id}/capture
 Content-Type: multipart/form-data
 ```
 
-form field:
+Form fields:
 
 - `slot_type`: `face_front`, `body_front_full`, `body_right_full`, `body_left_full`
-- `file`: 이미지 파일
+- `file`: captured image file
 
-응답:
+Response:
 
 ```json
 {
@@ -41,26 +44,93 @@ form field:
 }
 ```
 
-`valid=false`이면 PC1은 같은 slot을 다시 촬영하면 됩니다. PC3는 원본 이미지를 저장하지 않고 추출된 baseline 값 또는 slot checkpoint만 저장합니다.
+PC3 does not store the original image. It stores validated baseline measurements
+and slot checkpoints.
 
-baseline 저장 확인:
+Baseline status:
 
 ```http
 GET /api/baselines/users/{user_id}
 ```
 
-PC1은 `source === "user"`이고 `face`, `body.body_front_full`, `body.body_right_full`, `body.body_left_full`이 있으면 baseline 완료로 처리할 수 있습니다.
+PC1 may display completion when the response has `source === "user"` and the
+required face/body slots are present. PC3 still verifies the saved baseline again
+before routine planning.
 
-## Exercise Session
+## 2. Pre-Exercise Routine Recommendation
 
-### 1. Session 시작
+```http
+POST /api/routines/profile
+Content-Type: application/json
+```
+
+PC1 sends its existing `RecommendationRequestPayload` shape:
+
+```json
+{
+  "user_id": "profile_1",
+  "profile": {
+    "name": "Mirror User",
+    "weight_kg": 70,
+    "height_cm": 172,
+    "goal": "lower_body_strength",
+    "experience_level": "beginner",
+    "weekly_frequency": "three_four",
+    "limitations": ["knee"]
+  },
+  "baseline": {
+    "ready": true,
+    "completed_slots": [
+      "face_front",
+      "body_front_full",
+      "body_right_full",
+      "body_left_full"
+    ]
+  }
+}
+```
+
+PC3 validates required profile fields and confirms the saved PC3 baseline has
+all required user-source slots. PC3 then calls PC2 `/api/routine/profile` with a
+sanitized payload.
+
+PC3 response shape is PC1 `RecommendationResponsePayload`:
+
+```json
+{
+  "source": "ai",
+  "difficulty": "easy",
+  "title": "AI routine from PC2",
+  "description": "Routine generated from your profile.",
+  "reason_lines": ["Lower body control first."],
+  "estimated_minutes": 10,
+  "start_exercise_type": "squat",
+  "items": [
+    {
+      "exercise_type": "squat",
+      "title": "Day 1 - squat",
+      "reps": 8,
+      "rest_sec": 60,
+      "focus": "controlled posture",
+      "summary": "Build stable lower-body movement."
+    }
+  ]
+}
+```
+
+If PC2 fails, PC3 returns `source="basic"` with a local fallback routine that PC1
+can still render and start.
+
+## 3. Exercise Session
+
+Start:
 
 ```http
 POST /api/sessions/start
 Content-Type: application/json
 ```
 
-요청:
+Request:
 
 ```json
 {
@@ -70,7 +140,7 @@ Content-Type: application/json
 }
 ```
 
-지원 `goal`:
+Supported `goal` values:
 
 - `squat`
 - `jumping_jack`
@@ -78,26 +148,31 @@ Content-Type: application/json
 - `lunge`
 - `pushup`
 
-응답:
+Response includes a `ws_url` for realtime updates.
 
-```json
-{
-  "session_id": "sess_abc",
-  "user_id": "profile_1",
-  "mode": "exercise",
-  "goal": "pushup",
-  "status": "running",
-  "ws_url": "ws://127.0.0.1:9000/ws/sessions/sess_abc"
-}
-```
+## 4. Realtime and Frame Analysis
 
-### 2. WebSocket 연결
+WebSocket:
 
 ```text
 WS /ws/sessions/{session_id}
 ```
 
-PC3가 보내는 메시지:
+Frame upload:
+
+```http
+POST /api/analyze/exercise
+Content-Type: multipart/form-data
+```
+
+Form fields:
+
+- `session_id`
+- `file`
+
+PC3 handles realtime feedback locally. PC2 is not called for every frame.
+
+Example WebSocket update:
 
 ```json
 {
@@ -119,48 +194,26 @@ PC3가 보내는 메시지:
 }
 ```
 
-### 3. Frame 분석
-
-PC1은 운동 중 1-2초 간격으로 현재 frame을 보냅니다.
-
-```http
-POST /api/analyze/exercise
-Content-Type: multipart/form-data
-```
-
-form field:
-
-- `session_id`
-- `file`
-
-응답은 frame update만 포함합니다. 이 단계에서는 PC2 코칭을 호출하지 않습니다.
-
-### 4. Session 종료
+## 5. Stop Session
 
 ```http
 POST /api/sessions/{session_id}/stop
 ```
 
-이 시점에 PC3가 최종 exercise feature를 만들고, `MOCK_LLM=false`이면 PC2 `/api/coach/generate`를 호출합니다.
+At stop time, PC3 finalizes the exercise feature. If measurement quality is good
+and `MOCK_LLM=false`, PC3 calls PC2 `/api/coach/generate`. If quality is too low,
+PC3 skips PC2 and returns local guidance asking the user to retake the set.
 
-응답의 주요 field:
+Important response fields:
 
-- `features.exercise.type`: session 시작 때 받은 `goal`
+- `features.exercise.type`
 - `features.exercise.count`
-- `features.exercise.state`
 - `features.exercise.stability_score`
 - `features.exercise.posture_errors`
 - `features.exercise.measurement_quality`
 - `features.exercise.measurement_confidence`
-- `baseline_diff.exercise`
 - `coaching.summary`
 - `coaching.priority`
 - `coaching.exercise_plan`
 - `coaching.mirror_message`
 - `coaching.pc2_payload`
-
-## 주의
-
-- PC1은 PC3에 원본 이미지를 업로드하지만, PC3는 baseline DB나 PC2 요청에 원본 이미지를 저장/전달하지 않습니다.
-- 운동 중 실시간 feedback은 PC3가 담당합니다.
-- 운동 종료 후 다음 운동 계획과 mirror message는 PC2 응답을 우선 사용합니다.

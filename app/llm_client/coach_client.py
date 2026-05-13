@@ -7,6 +7,7 @@ import httpx
 from app.config import Settings
 from app.schemas.coaching import CoachingResponse, ExercisePlanItem, PC2Payload, RoutineItem
 from app.schemas.feature import FeaturePayload
+from app.schemas.routine import RecommendationRequest, RecommendationResponse, RoutineItemPayload
 
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,26 @@ PC2_BASELINE_DIFF_FIELDS = {
     "squat_depth_change",
     "duration_change",
 }
+SUPPORTED_ROUTINE_EXERCISES = {"squat", "jumping_jack", "knee_raise", "lunge", "pushup"}
+GOAL_LABELS = {
+    "build_stamina": "build stamina",
+    "posture_correction": "posture correction",
+    "lower_body_strength": "lower body strength",
+    "build_habit": "build an exercise habit",
+    "weight_management": "weight management",
+}
+WEEKLY_FREQUENCY_TO_DAYS = {
+    "once_twice": 2,
+    "three_four": 4,
+    "five_plus": 5,
+}
+GOAL_TO_EXERCISE = {
+    "build_stamina": "jumping_jack",
+    "posture_correction": "squat",
+    "lower_body_strength": "squat",
+    "build_habit": "knee_raise",
+    "weight_management": "jumping_jack",
+}
 
 
 class CoachClient:
@@ -54,6 +75,22 @@ class CoachClient:
         except Exception:
             logger.exception("PC2 Coach API call failed. Falling back to mock coaching.")
             return self._mock_response(payload)
+
+    async def generate_routine(self, request: RecommendationRequest) -> RecommendationResponse:
+        if self._settings.mock_llm:
+            return self._routine_fallback_response(request, "PC2 routine generation is disabled by MOCK_LLM.")
+
+        try:
+            async with httpx.AsyncClient(timeout=self._settings.pc2_timeout_seconds) as client:
+                response = await client.post(
+                    self._settings.pc2_routine_api_url,
+                    json=self.build_pc2_routine_request_json(request),
+                )
+                response.raise_for_status()
+            return self.pc2_routine_response_to_recommendation(request, response.json())
+        except Exception:
+            logger.exception("PC2 routine API call failed. Falling back to local basic routine.")
+            return self._routine_fallback_response(request, "PC2 unavailable. Using a local basic routine.")
 
     def measurement_quality_response(self, payload: FeaturePayload, quality: dict) -> CoachingResponse:
         exercise = payload.features.exercise
@@ -125,6 +162,69 @@ class CoachClient:
             request["purpose"] = payload.purpose
         return request
 
+    def build_pc2_routine_request_json(self, request: RecommendationRequest) -> dict:
+        profile = request.profile
+        self._validate_routine_profile(profile)
+        payload: dict = {
+            "user_id": request.user_id,
+            "user_goal": GOAL_LABELS[profile.goal],
+            "exercise_experience": profile.experience_level,
+            "available_days_per_week": WEEKLY_FREQUENCY_TO_DAYS[profile.weekly_frequency],
+            "restricted_body_parts": list(profile.limitations),
+            "purpose": "pre_exercise_routine",
+        }
+        if profile.name:
+            payload["profile_name"] = profile.name
+        if profile.weight_kg is not None:
+            payload["weight_kg"] = profile.weight_kg
+        return payload
+
+    def pc2_routine_response_to_recommendation(
+        self,
+        request: RecommendationRequest,
+        response_json: dict,
+    ) -> RecommendationResponse:
+        difficulty = self._difficulty_from_profile(request)
+        items: list[RoutineItemPayload] = []
+        for day in response_json.get("weekly_routine", []):
+            for exercise in day.get("exercises", []):
+                exercise_type = self._normalize_routine_exercise(exercise.get("exercise"))
+                if exercise_type is None:
+                    continue
+                reps = exercise.get("reps") or self._duration_to_reps(exercise.get("duration_sec"))
+                rest_sec = exercise.get("rest_sec")
+                items.append(
+                    RoutineItemPayload(
+                        exercise_type=exercise_type,
+                        title=f"{day.get('day_label') or 'Routine'} - {exercise_type.replace('_', ' ')}",
+                        reps=max(1, int(reps or 8)),
+                        rest_sec=max(0, int(rest_sec if rest_sec is not None else 60)),
+                        focus=str(exercise.get("focus") or day.get("focus") or "controlled posture"),
+                        summary=str(exercise.get("reason") or day.get("focus") or response_json.get("weekly_focus") or ""),
+                    )
+                )
+                if len(items) >= 3:
+                    break
+            if len(items) >= 3:
+                break
+
+        if not items:
+            return self._routine_fallback_response(request, "PC2 returned no usable exercise plan.")
+
+        cautions = [str(item) for item in response_json.get("cautions", []) if item]
+        weekly_focus = str(response_json.get("weekly_focus") or "Start with controlled posture.")
+        summary = str(response_json.get("summary") or "AI routine generated from your profile.")
+        return RecommendationResponse(
+            source="ai",
+            difficulty=difficulty,
+            title="AI routine from PC2",
+            description=summary,
+            reason_lines=[weekly_focus, *cautions],
+            estimated_minutes=self._estimate_minutes(items),
+            start_exercise_type=items[0].exercise_type,
+            items=items,
+        )
+
     def _dump_pc2_exercise(self, exercise) -> dict:
         raw = exercise.model_dump(mode="json", exclude_none=True)
         return {key: value for key, value in raw.items() if key in PC2_EXERCISE_FIELDS}
@@ -135,6 +235,74 @@ class CoachClient:
             for key, value in exercise_diff.items()
             if key in PC2_BASELINE_DIFF_FIELDS and value is not None
         }
+
+    def _validate_routine_profile(self, profile) -> None:
+        missing = []
+        if profile.goal is None:
+            missing.append("profile.goal")
+        if profile.experience_level is None:
+            missing.append("profile.experience_level")
+        if profile.weekly_frequency is None:
+            missing.append("profile.weekly_frequency")
+        if profile.weight_kg is None:
+            missing.append("profile.weight_kg")
+        if profile.height_cm is None:
+            missing.append("profile.height_cm")
+        if missing:
+            raise ValueError("Missing routine profile fields: " + ", ".join(missing))
+
+    def _difficulty_from_profile(self, request: RecommendationRequest) -> str:
+        profile = request.profile
+        if profile.experience_level == "consistent" or profile.weekly_frequency == "five_plus":
+            return "challenge"
+        if profile.experience_level == "beginner" or profile.weekly_frequency == "once_twice":
+            return "easy"
+        return "normal"
+
+    def _routine_fallback_response(self, request: RecommendationRequest, reason: str) -> RecommendationResponse:
+        difficulty = self._difficulty_from_profile(request)
+        primary = GOAL_TO_EXERCISE.get(request.profile.goal or "", "squat")
+        sequence = [primary, "knee_raise", "pushup"]
+        items = [
+            RoutineItemPayload(
+                exercise_type=exercise_type,
+                title=f"Basic routine {index + 1}",
+                reps=max(6, 12 - index * 2),
+                rest_sec=60,
+                focus="controlled posture",
+                summary=reason if index == 0 else "Local fallback plan.",
+            )
+            for index, exercise_type in enumerate(sequence)
+        ]
+        return RecommendationResponse(
+            source="basic",
+            difficulty=difficulty,
+            title="Basic fallback routine",
+            description="PC3 returned a local routine because PC2 routine planning was unavailable.",
+            reason_lines=[reason],
+            estimated_minutes=self._estimate_minutes(items),
+            start_exercise_type=items[0].exercise_type,
+            items=items,
+        )
+
+    def _normalize_routine_exercise(self, value) -> str | None:
+        raw = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+        if raw in SUPPORTED_ROUTINE_EXERCISES:
+            return raw
+        for exercise_type in SUPPORTED_ROUTINE_EXERCISES:
+            if exercise_type in raw:
+                return exercise_type
+        return None
+
+    def _duration_to_reps(self, duration_sec) -> int | None:
+        if duration_sec is None:
+            return None
+        return max(1, int(float(duration_sec) / 3))
+
+    def _estimate_minutes(self, items: list[RoutineItemPayload]) -> int:
+        total_reps = sum(item.reps for item in items)
+        total_rest = sum(item.rest_sec for item in items)
+        return max(8, round((total_reps * 3 + total_rest) / 60))
 
     def _mock_response(self, payload: FeaturePayload) -> CoachingResponse:
         exercise = payload.features.exercise

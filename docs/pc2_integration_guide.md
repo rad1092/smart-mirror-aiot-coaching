@@ -1,34 +1,96 @@
-# PC2 연동 가이드
+# PC2 Integration Guide
 
-PC3는 운동 세션 종료 시점에만 PC2 운동 코칭 API를 호출합니다.
+PC3 calls PC2 only through sanitized, contract-shaped payloads. PC2 does not
+receive raw camera data or PC1 display-only fields.
 
-## Endpoint
+## Endpoints
+
+PC3 uses these PC2 endpoints:
 
 ```text
-POST http://localhost:7000/api/coach/generate
+POST /api/routine/profile
+POST /api/coach/generate
 ```
 
-PC3 설정:
+PC3 settings:
 
 ```env
 MOCK_LLM=false
+PC2_ROUTINE_API_URL=http://<PC2_HOST>:7000/api/routine/profile
 PC2_COACH_API_URL=http://<PC2_HOST>:7000/api/coach/generate
 ```
 
-PC2가 없거나 응답이 실패하면 PC3는 로컬 mock coaching으로 fallback합니다.
+If PC2 is unavailable, PC3 returns a local fallback response instead of failing
+the PC1 flow.
 
-## 호출 조건
+## Pre-Exercise Routine Request
 
-| mode | event | 호출 여부 |
+PC1 sends `RecommendationRequestPayload` to PC3. PC3 verifies the saved baseline
+and sends PC2 a compact profile request:
+
+```json
+{
+  "user_id": "profile_1",
+  "user_goal": "lower body strength",
+  "exercise_experience": "beginner",
+  "available_days_per_week": 4,
+  "restricted_body_parts": ["knee"],
+  "purpose": "pre_exercise_routine",
+  "profile_name": "Mirror User",
+  "weight_kg": 70
+}
+```
+
+Mapping rules:
+
+- `goal` becomes a human-readable `user_goal`.
+- `weekly_frequency` maps as `once_twice=2`, `three_four=4`, `five_plus=5`.
+- `limitations` only allows `knee`, `back`, `shoulder`, and `ankle`.
+- Raw images, baseline slot data, PC1 UI-only fields, and null fields are not
+  sent.
+
+## Pre-Exercise Routine Response
+
+PC2 should return a `RoutineProfileResponse` with a weekly routine. PC3 flattens
+the first valid exercises into PC1 `RecommendationResponsePayload.items`.
+
+Example PC2 response:
+
+```json
+{
+  "summary": "Weekly lower-body routine generated.",
+  "weekly_focus": "Build stable knee and hip control.",
+  "weekly_routine": [
+    {
+      "day_label": "Day 1",
+      "focus": "lower body control",
+      "exercises": [
+        {
+          "exercise": "squat",
+          "sets": 2,
+          "reps": 8,
+          "duration_sec": null,
+          "rest_sec": 60,
+          "focus": "slow tempo",
+          "reason": "Practice stable knee tracking."
+        }
+      ]
+    }
+  ],
+  "cautions": ["Stop if knee pain appears."]
+}
+```
+
+## Post-Exercise Coaching Request
+
+PC3 calls coaching only for completed exercise sessions:
+
+| mode | event | PC2 call |
 | --- | --- | --- |
-| `exercise` | `session_completed` | 호출 |
-| `exercise` | frame update | 호출 안 함 |
+| `exercise` | `session_completed` | yes |
+| `exercise` | frame update | no |
 
-PC3에는 더 이상 얼굴/옷/외출 분석 모드가 없습니다.
-
-## Request Payload
-
-PC3는 exercise 전용 JSON만 보냅니다.
+Request:
 
 ```json
 {
@@ -59,7 +121,7 @@ PC3는 exercise 전용 JSON만 보냅니다.
 }
 ```
 
-지원 운동 타입:
+Supported exercise types:
 
 - `squat`
 - `jumping_jack`
@@ -67,22 +129,13 @@ PC3는 exercise 전용 JSON만 보냅니다.
 - `lunge`
 - `pushup`
 
-PC3는 PC2로 다음 값을 보내지 않습니다.
+PC3 strips fields that PC2 does not allow, including target tracking,
+classifier, measurement quality, image, video, full landmarks, segmentation, and
+null fields.
 
-- 원본 이미지 파일
-- base64 이미지
-- frame path
-- 영상 파일
-- 전체 landmark 배열
-- segmentation mask
-- camera stream URL
-- PC1 display-only target/classifier/measurement fields: `person_count`, `target_status`, `target_confidence`, `detected_type`, `exercise_confidence`, `goal_mismatch`, `measurement_quality`, `measurement_confidence`
-- 얼굴/옷 feature
-- 값이 `null`인 field
+## Post-Exercise Coaching Response
 
-## Response Payload
-
-PC2는 항상 JSON `CoachingResponse`를 반환해야 합니다.
+PC2 should return `CoachingResponse` JSON:
 
 ```json
 {
@@ -108,4 +161,4 @@ PC2는 항상 JSON `CoachingResponse`를 반환해야 합니다.
 }
 ```
 
-PC3는 이 응답을 session stop 응답의 `coaching` field에 보존합니다.
+PC3 preserves this response under the session stop `coaching` field for PC1.
