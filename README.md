@@ -73,7 +73,7 @@ Content-Type: multipart/form-data
 
 Form fields:
 
-- `slot_type`: `face_front`, `body_front_full`, `body_right_full`, `body_left_full`
+- `slot_type`: `face_front`, `body_front_full`
 - `file`: captured image file
 
 Response:
@@ -106,8 +106,10 @@ user-source slots:
 
 - `face_front`
 - `body_front_full`
-- `body_right_full`
-- `body_left_full`
+
+PC3 does not accept right/left side body baseline slots anymore. The baseline
+contract is intentionally small: a front profile face checkpoint and a front
+full-body checkpoint are enough before routine planning.
 
 PC3 also accepts the newer flat routine request documented by PC2, including
 optional `start_date`. PC3 then calls PC2 `POST /api/routine/profile` with a

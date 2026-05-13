@@ -31,7 +31,7 @@ Content-Type: multipart/form-data
 
 Form fields:
 
-- `slot_type`: `face_front`, `body_front_full`, `body_right_full`, `body_left_full`
+- `slot_type`: `face_front`, `body_front_full`
 - `file`: captured image file
 
 Response:
@@ -57,9 +57,15 @@ Baseline status:
 GET /api/baselines/users/{user_id}
 ```
 
-PC1 may display completion when the response has `source === "user"` and the
-required face/body slots are present. PC3 still verifies the saved baseline again
-before routine planning.
+PC3 requires only the simple profile face checkpoint and the front full-body
+checkpoint before routine planning:
+
+- `baseline.face.face_front.captured`
+- `baseline.body.body_front_full.captured`
+
+PC3 no longer accepts `body_right_full` or `body_left_full`. Older PC1 flows
+must remove those side captures and use only `face_front` plus
+`body_front_full`.
 
 ## 2. Pre-Exercise Routine Recommendation
 
@@ -86,9 +92,7 @@ PC1 sends its existing `RecommendationRequestPayload` shape:
     "ready": true,
     "completed_slots": [
       "face_front",
-      "body_front_full",
-      "body_right_full",
-      "body_left_full"
+      "body_front_full"
     ]
   },
   "start_date": "2026-05-13",
@@ -97,7 +101,7 @@ PC1 sends its existing `RecommendationRequestPayload` shape:
 ```
 
 PC3 validates required profile fields and confirms the saved PC3 baseline has
-all required user-source slots. PC3 then calls PC2 `/api/routine/profile` with a
+the required `face_front` and `body_front_full` checkpoints. PC3 then calls PC2 `/api/routine/profile` with a
 sanitized payload.
 
 PC3 also accepts the newer flat routine request shape:

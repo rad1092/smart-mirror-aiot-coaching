@@ -6,7 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-BaselineSlotType = Literal["face_front", "body_front_full", "body_right_full", "body_left_full"]
+BaselineSlotType = Literal["face_front", "body_front_full"]
 DifficultyLevel = Literal["easy", "normal", "challenge"]
 ExerciseExperience = Literal["beginner", "casual", "consistent"]
 ExerciseGoal = Literal[

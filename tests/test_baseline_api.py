@@ -89,7 +89,7 @@ def test_capture_baseline_body_uses_pose_visibility_validation(client, image_byt
     try:
         response = client.post(
             "/api/baselines/users/validated_user/capture",
-            data={"slot_type": "body_left_full"},
+            data={"slot_type": "body_front_full"},
             files={"file": ("body.jpg", image_bytes, "image/jpeg")},
         )
     finally:
@@ -98,7 +98,7 @@ def test_capture_baseline_body_uses_pose_visibility_validation(client, image_byt
     assert response.status_code == 200
     assert response.json()["valid"] is True
     baseline = client.get("/api/baselines/users/validated_user").json()
-    saved = baseline["baseline"]["body"]["body_left_full"]
+    saved = baseline["baseline"]["body"]["body_front_full"]
     assert saved["captured"] is True
     assert saved["body_height"] == 0.72
 
@@ -119,7 +119,7 @@ def test_capture_baseline_body_rejects_low_quality_pose_without_saving(client, i
     try:
         response = client.post(
             "/api/baselines/users/rejected_user/capture",
-            data={"slot_type": "body_right_full"},
+            data={"slot_type": "body_front_full"},
             files={"file": ("body.jpg", image_bytes, "image/jpeg")},
         )
     finally:
@@ -128,7 +128,7 @@ def test_capture_baseline_body_rejects_low_quality_pose_without_saving(client, i
     assert response.status_code == 200
     assert response.json() == {
         "valid": False,
-        "slot_type": "body_right_full",
+        "slot_type": "body_front_full",
         "reason": "Pose checks disagree.",
     }
     baseline = client.get("/api/baselines/users/rejected_user").json()

@@ -15,8 +15,6 @@ def _save_complete_baseline(client, user_id: str = "routine_user") -> None:
             "face": {"face_front": {"captured": True}},
             "body": {
                 "body_front_full": {"captured": True},
-                "body_right_full": {"captured": True},
-                "body_left_full": {"captured": True},
             },
         },
     )
@@ -40,8 +38,6 @@ def _routine_request(user_id: str = "routine_user", include_start_date: bool = T
             "completed_slots": [
                 "face_front",
                 "body_front_full",
-                "body_right_full",
-                "body_left_full",
             ],
         },
         "purpose": "pre_exercise_routine",

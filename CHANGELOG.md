@@ -6,12 +6,26 @@
 
 - 현재 브랜치: `main`
 - 원격 저장소: `origin=https://github.com/rad1092/smart-mirror-aiot-coaching.git`
-- 현재 HEAD: `60dd82a docs: add change tracking docs and skill rule`
-- 원격 `origin/main`: `60dd82a5afdc4dd8363f544d89587fa6238ebcd1`
+- 현재 HEAD: `61e3753 feat: require face detection for profile baseline`
+- 원격 `origin/main`: `61e3753`
 - Git tag: 없음
-- 문서 갱신 시각: `2026-05-13 14:17:01 +09:00`
+- 문서 갱신 시각: `2026-05-13 16:33:56 +09:00`
 
 현재 저장소에는 별도 tag가 없으므로, 아래 주요 커밋들을 실질적인 버전 경계로 봅니다.
+
+## 2026-05-13 16:33:56 +09:00 - 이번 커밋 - PC3 baseline 슬롯을 2개로 축소
+
+주요 변경:
+
+- PC3 baseline capture API에서 `body_right_full`, `body_left_full` 슬롯을 제거.
+- 허용 baseline 슬롯을 `face_front`, `body_front_full` 두 개로 고정.
+- 루틴 추천 전 baseline 검증도 `face_front`, `body_front_full`만 요구하도록 정리.
+- PC1 연동 문서와 README에서 오른쪽/왼쪽 전신 baseline 안내를 제거.
+- PC1이 오래된 side slot을 보내면 PC3가 400 응답으로 거부하는 계약으로 변경.
+
+검증:
+
+- `uv run --with-requirements requirements.txt python -m pytest -q`
 
 ## 2026-05-13 14:17:01 +09:00 - 이번 커밋 - 얼굴 baseline을 프로필 사진용 얼굴 검출로 단순화
 

@@ -201,7 +201,7 @@ def _validate_saved_baseline(user_id: str, baseline_service: BaselineService) ->
     missing = []
     if not face.get("face_front"):
         missing.append("face_front")
-    for slot in ("body_front_full", "body_right_full", "body_left_full"):
+    for slot in ("body_front_full",):
         if not body.get(slot):
             missing.append(slot)
     if source != "user" or missing:

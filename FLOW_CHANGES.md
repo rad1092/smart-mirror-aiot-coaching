@@ -20,6 +20,28 @@ PC1 프론트엔드
 
 현재 구조에서 PC1은 PC2를 직접 호출하지 않습니다. PC3가 PC1과 PC2 사이의 계약 정렬, 검증, 변환, fallback을 담당합니다.
 
+## 2026-05-13 16:33:56 +09:00 - baseline 슬롯 계약 2개로 축소
+
+변경 후 baseline 흐름:
+
+```text
+PC1 baseline capture
+  -> face_front
+      -> PC3가 이미지 decode
+      -> 정면 얼굴 1개 이상 검출
+      -> 프로필 사진용 checkpoint 저장
+  -> body_front_full
+      -> PC3가 MediaPipe pose/full-body visibility 검증
+      -> 정면 전신 checkpoint 저장
+```
+
+중요한 점:
+
+- PC3가 받는 baseline 슬롯은 `face_front`, `body_front_full` 두 개뿐입니다.
+- `body_right_full`, `body_left_full`은 더 이상 PC3 계약에 없습니다.
+- 오래된 PC1 화면이 오른쪽/왼쪽 슬롯을 보내면 PC3는 400으로 거부합니다.
+- 루틴 추천 전 baseline 검증도 위 두 checkpoint만 확인합니다.
+
 ## 2026-05-13 14:17:01 +09:00 - 얼굴 baseline 흐름 단순화
 
 변경 후 baseline 흐름:
@@ -31,7 +53,7 @@ PC1 baseline capture
       -> 너무 어둡지 않은지 확인
       -> 정면 얼굴 1개 이상 검출
       -> 프로필 사진용 checkpoint 저장
-  -> body_front_full / body_right_full / body_left_full
+  -> body_front_full
       -> PC3가 MediaPipe pose/full-body visibility 검증
       -> body checkpoint 저장
 ```

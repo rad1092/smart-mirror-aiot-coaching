@@ -54,7 +54,7 @@ async def capture_baseline_slot(
     pose_analyzer: PoseAnalyzer = Depends(get_pose_analyzer),
     baseline_service: BaselineService = Depends(get_baseline_service),
 ) -> BaselineCaptureResponse:
-    valid_slot_types = {"face_front", "body_front_full", "body_right_full", "body_left_full"}
+    valid_slot_types = {"face_front", "body_front_full"}
     if slot_type not in valid_slot_types:
         raise HTTPException(status_code=400, detail=f"Unknown slot_type: {slot_type!r}")
 
