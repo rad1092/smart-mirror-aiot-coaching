@@ -1,0 +1,244 @@
+# PC3 흐름 변경 정리
+
+이 문서는 Git 기록을 기준으로 PC3의 역할과 데이터 흐름이 어떻게 바뀌었는지 정리합니다.
+
+## 현재 런타임 흐름
+
+```text
+PC1 프론트엔드
+  -> PC3 Vision Gateway
+      -> baseline 검증
+      -> 루틴 요청 정규화
+      -> pose 분석 및 target tracking
+      -> session 측정 품질 판단
+      -> PC2 요청 whitelist 정제
+  -> PC2 Coach API
+      -> 운동 전 루틴 생성
+      -> 날짜별 루틴 조회
+      -> 운동 후 코칭 생성
+```
+
+현재 구조에서 PC1은 PC2를 직접 호출하지 않습니다. PC3가 PC1과 PC2 사이의 계약 정렬, 검증, 변환, fallback을 담당합니다.
+
+## 2026-05-13 12:01:16 +09:00 - 변경 문서 관리 흐름 추가
+
+런타임 흐름 영향:
+
+- PC1/PC2/PC3 API 동작 변경은 없습니다.
+- 운동 분석, baseline, routine, PC2 호출 흐름 변경은 없습니다.
+
+문서 관리 흐름:
+
+```text
+커밋/푸시 요청
+  -> CHANGELOG.md 생성 또는 갱신
+  -> FLOW_CHANGES.md 생성 또는 갱신
+  -> 구현 변경과 문서 변경을 함께 커밋
+```
+
+## 초기 흐름
+
+초기 PC3는 운동 전용 gateway라기보다 넓은 smart mirror gateway 성격이 있었습니다.
+
+당시 흐름은 대략 다음과 같았습니다.
+
+```text
+camera/frame input
+  -> PC3 broad analysis layer
+      -> exercise feature
+      -> face/grooming/outfit placeholder
+  -> PC2 mixed coaching payload
+```
+
+이 구조는 현재 PC1/PC2 기준과 맞지 않았습니다. PC1은 운동 전용 화면이고, PC2는 `extra="forbid"` strict schema를 사용하기 때문입니다.
+
+## Exercise-only 정리 이후 흐름
+
+`a4a99b0` 커밋에서 PC3는 운동 전용 범위로 정리되었습니다.
+
+변경 후 흐름:
+
+```text
+PC1 exercise frontend
+  -> PC3 exercise-only gateway
+      -> baseline slot checkpoint
+      -> pose analysis
+      -> session lifecycle
+      -> WebSocket exercise update
+  -> PC2 exercise coaching
+```
+
+런타임에서 제거된 것:
+
+- face analysis
+- outfit/color analysis
+- grooming knowledge 문서
+- segmentation placeholder
+- non-exercise PC2 payload field
+
+## PC1/PC2 운동 계약 정렬 흐름
+
+`df07a8f` 커밋에서 PC3는 PC1/PC2 공통 운동 계약에 맞춰졌습니다.
+
+주요 흐름:
+
+- PC1 baseline capture:
+  - `POST /api/baselines/users/{user_id}/capture`
+- PC1 realtime update:
+  - `count`
+  - `state`
+  - `feedback`
+  - `posture_errors`
+  - `stability_score`
+- PC2 운동 후 코칭 요청:
+  - `mode="exercise"`
+  - `event="session_completed"`
+  - `features.exercise`
+  - optional `baseline_diff.exercise`
+  - optional `environment`
+
+PC3는 PC2로 다음 데이터를 보내지 않도록 막습니다.
+
+- 원본 이미지
+- base64 이미지
+- 전체 landmark
+- target tracking metadata
+- measurement quality metadata
+- PC1 화면 전용 field
+- unknown field
+- null field
+
+## 자세 분석 확장 흐름
+
+`041cbeb`, `5743931`, `b54a021`, `4f41f37` 커밋을 거치면서 PC3는 단순 squat 분석에서 다중 운동/다중 모델 측정 gateway로 바뀌었습니다.
+
+현재 pose 분석 흐름:
+
+```text
+frame
+  -> MediaPipe Lite fast pass
+      -> person count
+      -> target 후보
+      -> target 연속성
+  -> MediaPipe Full accurate pass
+      -> landmark
+      -> angle
+      -> 운동별 state
+      -> 반복 count 검증
+  -> quality gate
+      -> dual_verified / fast_only / model_disagreement / blocked
+  -> PC1 realtime update
+```
+
+지원 운동:
+
+- `squat`
+- `jumping_jack`
+- `knee_raise`
+- `lunge`
+- `pushup`
+
+추가된 핵심 기능:
+
+- 세션 시작 후 target user lock
+- multi-person detection
+- target lost/reconnect 처리
+- 운동 타입 감지 정보
+- goal mismatch flag
+- PC2 호출 전 measurement quality guard
+
+## 운동 전 루틴 플랜 흐름
+
+`8d13a2d` 커밋에서 PC3에 운동 전 루틴 플랜 중계가 추가되었습니다.
+
+초기 루틴 플랜 흐름:
+
+```text
+PC1 RecommendationRequestPayload
+  -> PC3 /api/routines/profile
+      -> profile 검증
+      -> 저장된 baseline 검증
+      -> PC2 /api/routine/profile 호출
+      -> PC1 RecommendationResponsePayload 반환
+```
+
+중요한 점은 PC3가 PC1의 baseline claim만 믿지 않고, PC3 baseline DB에 실제로 `source="user"`인 필수 slot이 저장되어 있는지 다시 확인한다는 점입니다.
+
+PC2가 없거나 실패하면 PC3는 `source="basic"`인 local fallback 루틴을 반환합니다.
+
+## 최신 스케줄 루틴 흐름
+
+`3f418a8` 커밋에서 PC3는 최신 PC2 스케줄 루틴 계약에 맞춰졌습니다.
+
+현재 루틴 생성 흐름:
+
+```text
+PC1 nested RecommendationRequestPayload
+또는 PC2 문서형 flat routine payload
+  -> PC3 /api/routines/profile
+      -> PC3 내부 표준 request로 normalize
+      -> 저장된 user baseline 검증
+      -> PC1 enum 값을 PC2 human-readable label로 변환
+      -> start_date가 있으면 PC2로 전달
+      -> PC2 /api/routine/profile 호출
+      -> pc3_payload schedule metadata 보존
+      -> weekly_routine 상세 정보 보존
+      -> 기존 PC1 preview items와 확장 field를 함께 반환
+```
+
+새로 보존하는 필드:
+
+- `routine_id`
+- `start_date`
+- `scheduled_dates`
+- `weekly_routine`
+- `how_to`
+- `tips`
+
+날짜별 루틴 조회 흐름:
+
+```text
+PC1
+  -> PC3 GET /api/routines/profile/{user_id}/day?target_date=YYYY-MM-DD
+  -> PC2 GET /api/routine/profile/{user_id}/day?target_date=YYYY-MM-DD
+  -> PC3 normalized RoutineDayResponse
+  -> PC1
+```
+
+오류 처리:
+
+- PC2 404는 PC3에서도 404로 반환.
+- PC2 연결 실패는 503으로 반환.
+- 그 외 PC2 HTTP 실패는 502로 반환.
+
+## 현재 PC3 책임 범위
+
+현재 PC3가 담당하는 경계:
+
+- PC1 호환:
+  - baseline capture
+  - routine recommendation
+  - date routine lookup
+  - realtime WebSocket update
+  - session stop result
+- Vision runtime:
+  - MediaPipe Lite/Full 모델 사용
+  - target tracking
+  - 운동별 count/posture 분석
+  - measurement quality guard
+- PC2 호환:
+  - strict request filtering
+  - raw image forwarding 금지
+  - unknown/null field forwarding 금지
+  - routine schedule metadata 보존
+  - PC2 unavailable fallback
+
+## 현재 버전 스냅샷
+
+- 현재 HEAD: `3f418a8`
+- 현재 실질 버전:
+  - PC3 exercise-only gateway
+  - dual MediaPipe pose analysis
+  - PC1 baseline/realtime/session 호환
+  - PC2 운동 후 coaching 중계
+  - PC2 스케줄 루틴 proxy 지원
