@@ -20,6 +20,30 @@ PC1 프론트엔드
 
 현재 구조에서 PC1은 PC2를 직접 호출하지 않습니다. PC3가 PC1과 PC2 사이의 계약 정렬, 검증, 변환, fallback을 담당합니다.
 
+## 2026-05-14 13:50:34 +09:00 - 운동별 frame cadence 계약 보강
+
+변경 후 PC1 프레임 업로드 정책:
+
+```text
+squat / pushup / lunge
+  -> POST /api/analyze/exercise every 300 ms
+
+knee_raise / jumping_jack
+  -> POST /api/analyze/exercise every 200 ms
+
+adaptive loop 권장
+  -> frame upload
+  -> response 완료 대기
+  -> selected exercise 기준 150-300 ms 후 다음 upload
+```
+
+중요한 점:
+
+- PC1은 이전 frame upload가 끝나기 전에 다음 upload를 겹쳐 보내면 안 됩니다.
+- 이전 요청이 아직 진행 중이면 다음 예약 frame은 skip합니다.
+- 빠른 운동인 `knee_raise`, `jumping_jack`은 300ms보다 200ms cadence가 count 전환을 더 잘 잡습니다.
+- PC3 count는 연속 프레임의 state 전환을 보므로, PC1의 frame cadence는 API 모양만큼 중요한 계약입니다.
+
 ## 2026-05-14 13:46:25 +09:00 - target tracking grace와 frame cadence 계약 추가
 
 변경 후 운동 중 흐름:
