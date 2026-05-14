@@ -1,5 +1,25 @@
 # PC3 흐름 변경 정리
 
+## 2026-05-14 17:24:59 +09:00 - PC2 호출 timeout 흐름
+
+변경 후 PC2 호출 흐름:
+
+```text
+PC1
+  -> PC3
+      -> PC2 routine/coach/day API 호출
+         timeout = 90초
+      -> PC2 응답 수신
+      -> PC1 화면용 응답으로 변환
+```
+
+중요한 점:
+
+- PC3의 PC2 호출 방식은 그대로 `httpx.AsyncClient`를 사용한다.
+- 운동 전 루틴, 날짜별 루틴, 운동 후 코칭 호출은 같은 `PC2_TIMEOUT_SECONDS` 값을 공유한다.
+- 새 작업자는 `.env.example`의 `PC2_TIMEOUT_SECONDS=90`을 기준으로 로컬 `.env`를 맞추면 된다.
+- timeout을 늘린 것은 PC2 LLM 생성 시간이 길어질 수 있기 때문이며, PC3의 JSON 정제/whitelist 계약은 바꾸지 않았다.
+
 ## 2026-05-14 16:39:25 +09:00 - PC1 UI/UX 계약 문서 흐름
 
 추가된 문서 흐름:

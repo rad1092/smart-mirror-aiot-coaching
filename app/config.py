@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 9000
     ws_public_host: str | None = None
-    pc2_timeout_seconds: float = 5.0
+    pc2_timeout_seconds: float = 90.0
     cors_allow_origins: str = (
         "http://localhost:1420,http://127.0.0.1:1420,tauri://localhost"
     )

@@ -1,5 +1,22 @@
 # 변경 이력
 
+## 2026-05-14 17:24:59 +09:00 - PC2 호출 timeout 기본값 90초 정렬
+
+주요 변경:
+
+- PC2 routine/coach/day 호출에 공통으로 쓰는 `pc2_timeout_seconds` 기본값을 `90.0`초로 변경했다.
+- `.env.example`에 `PC2_TIMEOUT_SECONDS=90`을 추가해 새로 클론한 작업자도 같은 timeout 기준을 바로 확인할 수 있게 했다.
+- 현재 로컬 실행 환경의 `.env`도 `PC2_TIMEOUT_SECONDS=90`으로 맞췄다. 단, `.env`는 로컬 파일이라 커밋 대상에는 포함하지 않는다.
+
+검증:
+
+- `uv run --with-requirements requirements.txt python -c "from app.config import get_settings; print(get_settings().pc2_timeout_seconds)"`
+  - `90.0`
+
+배경:
+
+- 실제 PC2 운동 전 루틴 호출이 20초 이상 걸릴 수 있어, 기존 기본값 5초나 로컬 60초보다 여유 있는 90초 기준으로 맞췄다.
+
 ## 2026-05-14 16:39:25 +09:00 - 이번 변경 - PC1 UI/UX 계약 문서 정확화
 
 주요 변경:
