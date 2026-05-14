@@ -266,6 +266,11 @@ Frame cadence contract:
 - Recommended fixed intervals:
   - `squat`, `pushup`, `lunge`: 300 ms.
   - `knee_raise`, `jumping_jack`: 200 ms.
+- Recommended frame resolution:
+  - Preferred: `1280x720` JPEG frames.
+  - Minimum practical fallback: `960x540`.
+  - Do not jump to `1920x1080` first. PC3 runs dual MediaPipe, so 720p is the
+    current balance between landmark clarity and realtime latency.
 - Do not use a slow interval such as 1500 ms for counting. PC3 counts repetitions
   from pose state transitions like `up -> down -> up`, so sparse frames can miss
   the transition and leave `count` unchanged.

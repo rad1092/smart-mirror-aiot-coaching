@@ -43,11 +43,12 @@ class PoseAnalyzer:
     }
     _DEFAULT_THRESHOLDS: dict[str, Any] = {
         "squat": {
-            "down_knee_angle": 95,
+            "down_knee_angle": 120,
             "up_knee_angle": 160,
-            "min_body_height": 0.18,
-            "min_confident_landmark_ratio": 0.55,
-            "min_landmark_visibility": 0.5,
+            "min_body_height": 0.16,
+            "min_confident_landmark_ratio": 0.45,
+            "partial_body_margin": 0.01,
+            "min_landmark_visibility": 0.35,
             "stability_warning_threshold": 0.65,
             "posture_error_thresholds": {
                 "knees_caving_in": 0.12,
@@ -55,20 +56,22 @@ class PoseAnalyzer:
             },
         },
         "pushup": {
-            "down_elbow_angle": 95,
-            "up_elbow_angle": 155,
-            "body_line_min_angle": 160,
-            "min_body_height": 0.12,
-            "min_confident_landmark_ratio": 0.55,
-            "min_landmark_visibility": 0.5,
+            "down_elbow_angle": 115,
+            "up_elbow_angle": 145,
+            "body_line_min_angle": 150,
+            "min_body_height": 0.10,
+            "min_confident_landmark_ratio": 0.45,
+            "partial_body_margin": 0.01,
+            "min_landmark_visibility": 0.35,
             "stability_warning_threshold": 0.65,
         },
         "lunge": {
-            "down_knee_angle": 105,
-            "up_knee_angle": 160,
-            "min_body_height": 0.18,
-            "min_confident_landmark_ratio": 0.55,
-            "min_landmark_visibility": 0.5,
+            "down_knee_angle": 120,
+            "up_knee_angle": 155,
+            "min_body_height": 0.16,
+            "min_confident_landmark_ratio": 0.45,
+            "partial_body_margin": 0.01,
+            "min_landmark_visibility": 0.35,
             "stability_warning_threshold": 0.65,
             "posture_error_thresholds": {
                 "knees_caving_in": 0.14,
@@ -76,22 +79,25 @@ class PoseAnalyzer:
             },
         },
         "knee_raise": {
-            "raised_knee_min_height": 0.10,
-            "reset_knee_max_height": 0.03,
-            "max_count_imbalance": 2,
-            "min_body_height": 0.18,
-            "min_confident_landmark_ratio": 0.55,
-            "min_landmark_visibility": 0.5,
+            "raised_knee_min_height": 0.07,
+            "reset_knee_max_height": 0.025,
+            "max_count_imbalance": 3,
+            "min_body_height": 0.16,
+            "min_confident_landmark_ratio": 0.45,
+            "partial_body_margin": 0.01,
+            "min_landmark_visibility": 0.35,
             "stability_warning_threshold": 0.65,
         },
         "jumping_jack": {
-            "open_feet_width_ratio": 1.55,
-            "closed_feet_width_ratio": 0.90,
-            "arm_raise_margin": 0.02,
-            "arm_down_margin": 0.05,
-            "min_body_height": 0.18,
-            "min_confident_landmark_ratio": 0.55,
-            "min_landmark_visibility": 0.5,
+            "open_feet_width_ratio": 1.12,
+            "closed_feet_width_ratio": 1.08,
+            "arm_raise_margin": -0.05,
+            "arm_down_margin": 0.0,
+            "min_raised_arm_sides": 1,
+            "min_body_height": 0.16,
+            "min_confident_landmark_ratio": 0.45,
+            "partial_body_margin": 0.01,
+            "min_landmark_visibility": 0.35,
             "stability_warning_threshold": 0.65,
         },
     }
@@ -158,7 +164,7 @@ class PoseAnalyzer:
     }
     _TARGET_LOST_GRACE_FRAMES = 8
     _MODEL_DISAGREEMENT_GRACE_FRAMES = 1
-    _TARGET_MATCH_MIN_CONFIDENCE = 0.62
+    _TARGET_MATCH_MIN_CONFIDENCE = 0.56
 
     def __init__(
         self,
@@ -417,16 +423,20 @@ class PoseAnalyzer:
                 posture_errors=["person_too_far"],
                 feedback="몸이 너무 작게 보여요. 카메라에 조금 더 가까이 서 주세요.",
                 clear_phase=False,
-                **target_updates,
+                **self._blocked_target_updates(previous, target_updates),
             )
-        if self._has_partial_body(landmarks, required):
+        if self._has_partial_body(
+            landmarks,
+            required,
+            margin=self._threshold(exercise_type, "partial_body_margin", 0.015),
+        ):
             return self._idle_feature(
                 previous,
                 exercise_type,
                 posture_errors=["low_confidence", "partial_body"],
                 feedback="몸 전체가 화면 안에 들어오도록 위치를 조정해 주세요.",
                 clear_phase=False,
-                **target_updates,
+                **self._blocked_target_updates(previous, target_updates),
             )
         if not self._landmarks_are_confident(landmarks, required, exercise_type):
             return self._idle_feature(
@@ -434,33 +444,33 @@ class PoseAnalyzer:
                 exercise_type,
                 posture_errors=["low_confidence"],
                 feedback="조명과 자세를 조정해 관절이 선명하게 보이게 해 주세요.",
-                **target_updates,
+                **self._blocked_target_updates(previous, target_updates),
             )
         try:
             if exercise_type == "pushup":
                 feature, feedback = self._analyze_pushup(landmarks, previous)
-                return self._with_target_and_classification(
-                    feature, previous, landmarks, exercise_type, target_updates
-                ), feedback
+                return self._finalize_valid_feature(
+                    feature, feedback, previous, landmarks, exercise_type, target_updates
+                )
             if exercise_type == "lunge":
                 feature, feedback = self._analyze_lunge(landmarks, previous)
-                return self._with_target_and_classification(
-                    feature, previous, landmarks, exercise_type, target_updates
-                ), feedback
+                return self._finalize_valid_feature(
+                    feature, feedback, previous, landmarks, exercise_type, target_updates
+                )
             if exercise_type == "knee_raise":
                 feature, feedback = self._analyze_knee_raise(landmarks, previous)
-                return self._with_target_and_classification(
-                    feature, previous, landmarks, exercise_type, target_updates
-                ), feedback
+                return self._finalize_valid_feature(
+                    feature, feedback, previous, landmarks, exercise_type, target_updates
+                )
             if exercise_type == "jumping_jack":
                 feature, feedback = self._analyze_jumping_jack(landmarks, previous)
-                return self._with_target_and_classification(
-                    feature, previous, landmarks, exercise_type, target_updates
-                ), feedback
+                return self._finalize_valid_feature(
+                    feature, feedback, previous, landmarks, exercise_type, target_updates
+                )
             feature, feedback = self._analyze_squat(landmarks, previous)
-            return self._with_target_and_classification(
-                feature, previous, landmarks, exercise_type, target_updates
-            ), feedback
+            return self._finalize_valid_feature(
+                feature, feedback, previous, landmarks, exercise_type, target_updates
+            )
         except Exception:
             logger.exception("Pose analysis failed during landmark processing. Returning fallback.")
             return self._idle_feature(
@@ -638,15 +648,11 @@ class PoseAnalyzer:
         else:
             state = "idle"
 
-        count = previous.count
-        count_left = previous.count_left or 0
-        count_right = previous.count_right or 0
-        if previous.state != "up" and state == "up":
-            count += 1
-            if active_side == "LEFT":
-                count_left += 1
-            else:
-                count_right += 1
+        count, count_left, count_right, rep_phase, pending_side = self._raise_count_with_hysteresis(
+            previous,
+            state,
+            active_side,
+        )
 
         posture_errors: list[str] = []
         if state == "idle" and active_height > reset_height:
@@ -674,6 +680,8 @@ class PoseAnalyzer:
                 posture_errors=posture_errors,
                 knee_angle=round(active_knee_angle, 1),
                 back_angle=round(trunk_angle, 1),
+                rep_phase=rep_phase,
+                active_side=pending_side,
             ),
             feedback,
         )
@@ -686,8 +694,8 @@ class PoseAnalyzer:
         shoulder_width = max(self._width(landmarks, "SHOULDER"), 0.01)
         ankle_width = self._width(landmarks, "ANKLE")
         feet_ratio = ankle_width / shoulder_width
-        open_ratio = self._threshold("jumping_jack", "open_feet_width_ratio", 1.55)
-        closed_ratio = self._threshold("jumping_jack", "closed_feet_width_ratio", 0.90)
+        open_ratio = self._threshold("jumping_jack", "open_feet_width_ratio", 1.12)
+        closed_ratio = self._threshold("jumping_jack", "closed_feet_width_ratio", 1.08)
         arms_up = self._arms_up(landmarks)
         arms_down = self._arms_down(landmarks)
         feet_open = feet_ratio >= open_ratio
@@ -750,6 +758,18 @@ class PoseAnalyzer:
             previous.model_copy(update=update),
             feedback,
         )
+
+    def _blocked_target_updates(
+        self,
+        previous: ExerciseFeature,
+        target_updates: dict[str, Any],
+    ) -> dict[str, Any]:
+        if previous.target_signature:
+            return target_updates
+        updates = dict(target_updates)
+        updates["target_status"] = "target_pending"
+        updates["target_signature"] = None
+        return updates
 
     def _target_recovering_feature(
         self,
@@ -824,6 +844,32 @@ class PoseAnalyzer:
             return count, count_left, count_right, "up", None
         return count, count_left, count_right, phase, pending_side
 
+    def _raise_count_with_hysteresis(
+        self,
+        previous: ExerciseFeature,
+        state: str,
+        active_side: str,
+    ) -> tuple[int, int, int, str | None, str | None]:
+        count = previous.count
+        count_left = previous.count_left or 0
+        count_right = previous.count_right or 0
+        phase = previous.rep_phase or (previous.state if previous.state in {"up", "down"} else None)
+        pending_side = previous.active_side
+        if state == "down":
+            return count, count_left, count_right, "down", None
+        if state == "idle":
+            return count, count_left, count_right, "down" if phase == "down" else phase, pending_side
+        if state == "up" and phase == "down":
+            count += 1
+            if active_side == "LEFT":
+                count_left += 1
+            else:
+                count_right += 1
+            return count, count_left, count_right, "up", None
+        if state == "up":
+            return count, count_left, count_right, "up", None
+        return count, count_left, count_right, phase, pending_side
+
     def _dual_ready(self) -> bool:
         return (
             self._backend == "mediapipe_tasks_dual"
@@ -839,6 +885,7 @@ class PoseAnalyzer:
             "person_too_far",
             "partial_body",
             "low_confidence",
+            "multi_person_detected",
             "analysis_failed",
         }
         return any(error in blocking for error in feature.posture_errors)
@@ -933,6 +980,40 @@ class PoseAnalyzer:
             }
         )
 
+    def _finalize_valid_feature(
+        self,
+        feature: ExerciseFeature,
+        feedback: str,
+        previous: ExerciseFeature,
+        landmarks,
+        exercise_type: str,
+        target_updates: dict[str, Any],
+    ) -> tuple[ExerciseFeature, str]:
+        feature = self._with_target_and_classification(
+            feature, previous, landmarks, exercise_type, target_updates
+        )
+        if target_updates.get("target_status") != "multi_person_detected":
+            return feature, feedback
+
+        if (feature.target_confidence or 0.0) < 0.7:
+            feature = self._prevent_new_count(feature, previous)
+        posture_errors = list(feature.posture_errors)
+        if "multi_person_detected" not in posture_errors:
+            posture_errors.insert(0, "multi_person_detected")
+        feature = feature.model_copy(
+            update={
+                "posture_errors": posture_errors,
+                "measurement_quality": "multi_person_detected",
+                "measurement_confidence": 0.0,
+            }
+        )
+        return feature, self._feedback(
+            exercise_type,
+            feature.state,
+            ["multi_person_detected"],
+            feature.stability_score,
+        )
+
     def _pose_candidates(self, detected_landmarks) -> list:
         if not detected_landmarks:
             return []
@@ -943,6 +1024,13 @@ class PoseAnalyzer:
 
     def _select_target_candidate(self, candidates: list, previous: ExerciseFeature) -> dict[str, Any]:
         if not previous.target_signature:
+            if len(candidates) > 1:
+                return {
+                    "landmarks": None,
+                    "status": "multi_person_detected",
+                    "confidence": 0.0,
+                    "signature": None,
+                }
             selected = max(candidates, key=self._initial_target_score)
             return {
                 "landmarks": selected,
@@ -1115,15 +1203,16 @@ class PoseAnalyzer:
         height = max(point.y for point in points) - min(point.y for point in points)
         person_scale = max(width, height)
         default_height = 0.12 if exercise_type == "pushup" else 0.18
-        return person_scale < self._threshold(exercise_type, "min_body_height", default_height)
+        min_height = max(self._threshold(exercise_type, "min_body_height", default_height), default_height)
+        return person_scale < min_height
 
-    def _has_partial_body(self, landmarks, required_names: list[str]) -> bool:
-        margin = 0.04
+    def _has_partial_body(self, landmarks, required_names: list[str], margin: float = 0.04) -> bool:
+        edge_margin = max(margin, 0.02)
         for name in required_names:
             landmark = landmarks[self._LANDMARK_INDEX[name]]
-            if landmark.x < margin or landmark.x > 1 - margin:
+            if landmark.x <= edge_margin or landmark.x >= 1 - edge_margin:
                 return True
-            if landmark.y < margin or landmark.y > 1 - margin:
+            if landmark.y <= edge_margin or landmark.y >= 1 - edge_margin:
                 return True
         return False
 
@@ -1237,15 +1326,19 @@ class PoseAnalyzer:
         return hip.y - knee.y
 
     def _arms_up(self, landmarks) -> bool:
-        margin = self._threshold("jumping_jack", "arm_raise_margin", 0.02)
+        margin = self._threshold("jumping_jack", "arm_raise_margin", -0.05)
         left_wrist = self._landmark(landmarks, "LEFT", "WRIST")
         right_wrist = self._landmark(landmarks, "RIGHT", "WRIST")
         left_shoulder = self._landmark(landmarks, "LEFT", "SHOULDER")
         right_shoulder = self._landmark(landmarks, "RIGHT", "SHOULDER")
-        return left_wrist.y < left_shoulder.y - margin and right_wrist.y < right_shoulder.y - margin
+        raised_sides = int(left_wrist.y < left_shoulder.y - margin) + int(
+            right_wrist.y < right_shoulder.y - margin
+        )
+        required_sides = int(self._threshold("jumping_jack", "min_raised_arm_sides", 1))
+        return raised_sides >= max(1, min(required_sides, 2))
 
     def _arms_down(self, landmarks) -> bool:
-        margin = self._threshold("jumping_jack", "arm_down_margin", 0.05)
+        margin = self._threshold("jumping_jack", "arm_down_margin", 0.0)
         left_wrist = self._landmark(landmarks, "LEFT", "WRIST")
         right_wrist = self._landmark(landmarks, "RIGHT", "WRIST")
         left_shoulder = self._landmark(landmarks, "LEFT", "SHOULDER")

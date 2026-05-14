@@ -154,6 +154,13 @@ Recommended frame upload cadence:
 - `squat`, `pushup`, `lunge`: every 300 ms.
 - `knee_raise`, `jumping_jack`: every 200 ms.
 
+Recommended exercise frame resolution:
+
+- Preferred: `1280x720` JPEG frames.
+- Minimum practical fallback: `960x540`.
+- Avoid going above `1920x1080` during dual MediaPipe mode unless the PC3 CPU
+  budget has been checked.
+
 PC1 should not send overlapping frame uploads. If a previous
 `POST /api/analyze/exercise` request is still in flight, skip the next scheduled
 frame. The preferred implementation is an adaptive loop: upload a frame, wait for

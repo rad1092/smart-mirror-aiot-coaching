@@ -1,5 +1,31 @@
 # 변경 이력
 
+## 2026-05-14 16:03:12 +09:00 - 이번 변경 - 라이브 운동 5종 검증과 720p 프레임 계약
+
+주요 변경:
+
+- 실제 ABKO 웹캠 기준으로 `squat`, `jumping_jack`, `knee_raise`, `pushup`, `lunge` 5종의 count 증가를 확인했다.
+- `knee_raise`는 `up -> idle -> up` 흔들림으로 같은 반복이 두 번 세지지 않도록 전용 hysteresis를 적용했다.
+- 같은 세션의 `/api/analyze/exercise` 요청을 session lock으로 직렬 처리해 HTTP 응답 count와 WebSocket count가 어긋나지 않게 했다.
+- PC1 운동 프레임 권장 해상도를 `1280x720` JPEG로 명시했다. 최소 fallback은 `960x540`으로 본다.
+- `multi_person_detected`도 운동 중 count 증가를 막는 blocking 상태로 기록한다.
+
+검증:
+
+- `uv run --with-requirements requirements.txt python -m pytest -q`
+  - `76 passed`
+- 라이브 확인:
+  - `squat`: count 증가 확인
+  - `jumping_jack`: count `12`까지 증가 확인
+  - `knee_raise`: HTTP/WS count `15/15`, gap `0`, `+2` 튐 없음
+  - `pushup`: HTTP/WS count `4/4`, gap `0`, `+2` 튐 없음
+  - `lunge`: HTTP/WS count `7/7`, left/right `4/3`, gap `0`, `+2` 튐 없음
+
+주의:
+
+- `pushup`, `lunge`는 카메라 위치가 나쁘면 후반에 `target_lost`가 뜰 수 있다.
+- `lunge`의 `detected_type`은 아직 `squat`으로 오판하는 경우가 있어, 선택 운동 `goal` 기준 카운트 로직을 우선 사용한다.
+
 이 문서는 `main` 브랜치의 Git 기록을 기준으로 정리한 PC3 변경 이력입니다.
 
 ## 현재 버전 기준

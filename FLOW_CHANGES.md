@@ -1,5 +1,38 @@
 # PC3 흐름 변경 정리
 
+## 2026-05-14 16:03:12 +09:00 - 라이브 5종 검증 후 운동 프레임 흐름
+
+변경 후 PC1 운동 프레임 권장 흐름:
+
+```text
+PC1 webcam
+  -> 1280x720 JPEG frame
+  -> POST /api/analyze/exercise
+  -> PC3 session_id별 analyze lock
+  -> Lite target tracking
+  -> Full pose measurement
+  -> exercise goal 기준 count/state 계산
+  -> 같은 결과로 HTTP response + WebSocket exercise_update
+```
+
+운동별 권장 주기:
+
+```text
+squat / pushup / lunge
+  -> 300 ms
+
+knee_raise / jumping_jack
+  -> 200 ms
+```
+
+중요한 점:
+
+- PC1은 이전 frame upload가 끝나기 전에 다음 upload를 겹쳐 보내면 안 된다.
+- HTTP count와 WebSocket count는 같은 분석 결과에서 나와야 한다.
+- `knee_raise`는 무릎이 완전히 내려온 뒤 다시 올라갈 때만 다음 반복으로 센다.
+- `target_recovering`, `target_lost`, `person_too_far`, `partial_body`, `low_confidence`, `multi_person_detected`, `model_disagreement` 상태에서는 count 증가를 막고 기존 count/phase를 보존한다.
+- 라이브 확인 기준 5종 모두 count가 증가했다. 남은 품질 이슈는 `pushup/lunge`의 카메라 위치에 따른 `target_lost`, 그리고 `lunge`의 detected type 오판이다.
+
 이 문서는 Git 기록을 기준으로 PC3의 역할과 데이터 흐름이 어떻게 바뀌었는지 정리합니다.
 
 ## 현재 런타임 흐름

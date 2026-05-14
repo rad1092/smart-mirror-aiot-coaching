@@ -77,6 +77,7 @@ class MemoryStore:
                 "no_person",
                 "target_recovering",
                 "target_lost",
+                "multi_person_detected",
                 "person_too_far",
                 "partial_body",
                 "low_confidence",
