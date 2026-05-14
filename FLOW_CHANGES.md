@@ -1,5 +1,29 @@
 # PC3 흐름 변경 정리
 
+## 2026-05-14 16:39:25 +09:00 - PC1 UI/UX 계약 문서 흐름
+
+추가된 문서 흐름:
+
+```text
+PC1 작업자 / PC1 Codex
+  -> PC1_UI_CONTRACT.md 우선 확인
+  -> docs/pc1_integration_guide.md로 API 세부 확인
+  -> PC1 화면 구현
+      -> baseline 2항목
+      -> 루틴 추천
+      -> 날짜별 루틴
+      -> 운동 session + WebSocket + frame upload
+      -> stop 결과 + coaching 표시
+```
+
+중요한 점:
+
+- PC1은 PC2를 직접 호출하지 않고 PC3만 호출한다.
+- PC1 화면의 count는 PC3 HTTP/WebSocket count를 그대로 표시한다.
+- WebSocket 메시지는 현재 session id와 일치할 때만 반영한다.
+- PC1은 `face_front`, `body_front_full` baseline만 사용한다.
+- PC1은 `PC1_UI_CONTRACT.md`의 금지사항과 구현 체크리스트를 기준으로 UI/UX를 맞춘다.
+
 ## 2026-05-14 16:03:12 +09:00 - 라이브 5종 검증 후 운동 프레임 흐름
 
 변경 후 PC1 운동 프레임 권장 흐름:

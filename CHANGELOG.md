@@ -1,5 +1,26 @@
 # 변경 이력
 
+## 2026-05-14 16:39:25 +09:00 - 이번 변경 - PC1 UI/UX 계약 문서 정확화
+
+주요 변경:
+
+- 최상단 `PC1_UI_CONTRACT.md`를 추가해 PC1 화면 흐름 기준 계약을 정리했다.
+- baseline, 루틴 추천, 날짜별 루틴, 운동 세션, WebSocket, 결과 화면의 API/필드/표시 기준을 한글로 명시했다.
+- PC1 금지사항과 PC1 쪽 Codex 구현 체크리스트를 문서에 포함했다.
+- `docs/pc1_integration_guide.md`에 화면 표시 필드, 개발자용 필드, WebSocket session 처리, 금지사항을 보강했다.
+- README에 PC1 UI 계약 문서 링크를 추가했다.
+
+검증:
+
+- `uv run --with-requirements requirements.txt python -m pytest -q`
+  - `74 passed`
+
+커밋 제외:
+
+- 로컬 검증 UI `scripts/webcam_contract_check.py`
+- 테스트 파일 변경
+- `__pycache__`
+
 ## 2026-05-14 16:03:12 +09:00 - 이번 변경 - 라이브 운동 5종 검증과 720p 프레임 계약
 
 주요 변경:
@@ -13,7 +34,7 @@
 검증:
 
 - `uv run --with-requirements requirements.txt python -m pytest -q`
-  - `76 passed`
+  - `74 passed`
 - 라이브 확인:
   - `squat`: count 증가 확인
   - `jumping_jack`: count `12`까지 증가 확인

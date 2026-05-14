@@ -20,6 +20,10 @@ PC3 never sends raw images, base64 frames, videos, full landmarks, segmentation
 masks, or PC1 display-only fields to PC2. PC2 receives only whitelisted exercise
 or routine payloads.
 
+## PC1 UI Contract
+
+PC1 UI/UX 작업자는 [PC1_UI_CONTRACT.md](PC1_UI_CONTRACT.md)를 우선 계약 문서로 사용합니다. 이 문서는 baseline, 루틴 추천, 날짜별 루틴, 운동 화면, WebSocket, 운동 결과 화면에서 PC1이 PC3와 맞춰야 하는 API/필드/표시 기준을 화면 흐름 기준으로 정리합니다.
+
 ## Run
 
 ```bash

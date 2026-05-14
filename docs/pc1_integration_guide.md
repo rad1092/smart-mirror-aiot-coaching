@@ -4,6 +4,8 @@ PC1 is the exercise-only frontend. PC3 provides baseline validation, pre-exercis
 routine planning, pose analysis, realtime feedback, and post-exercise coaching
 bridging.
 
+UI/UX 구현자는 먼저 repo root의 `PC1_UI_CONTRACT.md`를 읽어야 합니다. 이 문서는 개발 연동 세부 정보이고, 화면 흐름과 표시 기준의 우선 계약은 `PC1_UI_CONTRACT.md`입니다.
+
 ## Base URL
 
 Local development:
@@ -283,6 +285,38 @@ Frame cadence contract:
   `target_status` during integration checks.
 - PC3 intentionally freezes count increases while the locked target is
   recovering/lost or while blocking posture errors are present.
+
+Display contract:
+
+- Large exercise counter: `exercise.count` from HTTP response or WebSocket.
+- Main realtime guide: top-level `feedback` from HTTP response or WebSocket.
+- User-visible warning: `exercise.target_status` and `exercise.posture_errors`.
+- Measurement status: `exercise.measurement_quality` and `exercise.measurement_confidence`.
+- Side counters: `exercise.count_left` and `exercise.count_right` for `knee_raise` and `lunge`.
+
+Developer/debug-only fields:
+
+- `person_count`
+- `target_confidence`
+- `detected_type`
+- `exercise_confidence`
+- `goal_mismatch`
+- `knee_angle`
+- `back_angle`
+- `rep_phase`
+- `active_side`
+
+PC1 must ignore WebSocket messages whose `session_id` does not match the active
+session. PC1 must not decrement or locally correct `count`; the PC3 value is the
+source of truth.
+
+PC1 must not send or require:
+
+- Direct PC2 calls from the frontend.
+- Deprecated baseline slots: `body_right_full`, `body_left_full`.
+- Overlapping `/api/analyze/exercise` requests.
+- Raw baseline claims without PC3 baseline validation.
+- Raw landmarks, raw video, face feature, outfit feature, or PC2-only fields.
 
 Example WebSocket update:
 
