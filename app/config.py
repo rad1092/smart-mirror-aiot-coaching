@@ -66,6 +66,7 @@ class Settings(BaseSettings):
     pose_accurate_model_path: Path | None = None
     pose_accurate_interval: int = Field(default=1, ge=1, le=30)
     max_poses: int = Field(default=3, ge=1, le=8)
+    target_lost_grace_frames: int = Field(default=8, ge=0, le=120)
     min_valid_frame_ratio: float = Field(default=0.55, ge=0.0, le=1.0)
     max_model_disagreement_ratio: float = Field(default=0.30, ge=0.0, le=1.0)
     config_exercise_thresholds: Path = Field(default_factory=default_exercise_thresholds_path)

@@ -45,8 +45,8 @@ class PoseAnalyzer:
         "squat": {
             "down_knee_angle": 95,
             "up_knee_angle": 160,
-            "min_body_height": 0.22,
-            "min_confident_landmark_ratio": 0.65,
+            "min_body_height": 0.18,
+            "min_confident_landmark_ratio": 0.55,
             "min_landmark_visibility": 0.5,
             "stability_warning_threshold": 0.65,
             "posture_error_thresholds": {
@@ -58,16 +58,16 @@ class PoseAnalyzer:
             "down_elbow_angle": 95,
             "up_elbow_angle": 155,
             "body_line_min_angle": 160,
-            "min_body_height": 0.16,
-            "min_confident_landmark_ratio": 0.65,
+            "min_body_height": 0.12,
+            "min_confident_landmark_ratio": 0.55,
             "min_landmark_visibility": 0.5,
             "stability_warning_threshold": 0.65,
         },
         "lunge": {
             "down_knee_angle": 105,
             "up_knee_angle": 160,
-            "min_body_height": 0.22,
-            "min_confident_landmark_ratio": 0.65,
+            "min_body_height": 0.18,
+            "min_confident_landmark_ratio": 0.55,
             "min_landmark_visibility": 0.5,
             "stability_warning_threshold": 0.65,
             "posture_error_thresholds": {
@@ -79,8 +79,8 @@ class PoseAnalyzer:
             "raised_knee_min_height": 0.10,
             "reset_knee_max_height": 0.03,
             "max_count_imbalance": 2,
-            "min_body_height": 0.22,
-            "min_confident_landmark_ratio": 0.65,
+            "min_body_height": 0.18,
+            "min_confident_landmark_ratio": 0.55,
             "min_landmark_visibility": 0.5,
             "stability_warning_threshold": 0.65,
         },
@@ -89,8 +89,8 @@ class PoseAnalyzer:
             "closed_feet_width_ratio": 0.90,
             "arm_raise_margin": 0.02,
             "arm_down_margin": 0.05,
-            "min_body_height": 0.22,
-            "min_confident_landmark_ratio": 0.65,
+            "min_body_height": 0.18,
+            "min_confident_landmark_ratio": 0.55,
             "min_landmark_visibility": 0.5,
             "stability_warning_threshold": 0.65,
         },
@@ -156,6 +156,9 @@ class PoseAnalyzer:
         "knee_raise": "무릎 들어올리기",
         "jumping_jack": "점핑잭",
     }
+    _TARGET_LOST_GRACE_FRAMES = 8
+    _MODEL_DISAGREEMENT_GRACE_FRAMES = 1
+    _TARGET_MATCH_MIN_CONFIDENCE = 0.62
 
     def __init__(
         self,
@@ -169,11 +172,13 @@ class PoseAnalyzer:
         pose_pipeline_mode: str = "single",
         accurate_interval: int = 1,
         max_poses: int = 3,
+        target_lost_grace_frames: int = 8,
     ) -> None:
         self._thresholds = load_json_file(exercise_thresholds_path, self._DEFAULT_THRESHOLDS)
         self._exercise_rules = load_json_file(exercise_rules_path, {})
         self._exercise_classifier = ExerciseClassifier(exercise_classifier_path)
         self._max_poses = max(1, int(max_poses))
+        self._target_lost_grace_frames = max(0, int(target_lost_grace_frames))
         self._pipeline_mode = "dual" if str(pose_pipeline_mode).lower() == "dual" else "single"
         self._accurate_interval = max(1, int(accurate_interval))
         self._frame_index = 0
@@ -321,7 +326,7 @@ class PoseAnalyzer:
             return self._mark_fast_only(
                 fast_feature,
                 previous,
-            ), "Accurate pose check failed. Using fast pose only for this frame."
+            ), "정밀 포즈 확인이 불안정해 이번 프레임은 빠른 추적 결과만 사용합니다."
 
         target_updates = {
             "person_count": fast_feature.person_count,
@@ -337,7 +342,7 @@ class PoseAnalyzer:
             return self._mark_model_disagreement(
                 accurate_feature,
                 previous,
-            ), "Pose models disagree. Hold the posture clearly before counting."
+            ), "두 포즈 모델의 판정이 달라 카운트를 보류했어요. 자세를 또렷하게 유지해 주세요."
 
         confidence = min(accurate_feature.stability_score, target_updates["target_confidence"])
         return accurate_feature.model_copy(
@@ -356,32 +361,34 @@ class PoseAnalyzer:
         pose_candidates = self._pose_candidates(detected_landmarks)
         person_count = len(pose_candidates)
         if not pose_candidates:
-            target_status = "target_lost" if previous.target_signature else "no_person"
+            if previous.target_signature:
+                return self._target_recovering_feature(
+                    previous,
+                    exercise_type,
+                    person_count=0,
+                    confidence=0.0,
+                    extra_errors=[],
+                )
             return self._idle_feature(
                 previous,
                 exercise_type,
                 posture_errors=["no_person"],
-                feedback="몸 전체가 화면에 보이도록 조금 뒤로 이동해 주세요.",
-                clear_phase=True,
+                feedback="몸 전체가 화면에 보이도록 카메라 위치와 거리를 맞춰 주세요.",
+                clear_phase=False,
                 person_count=0,
-                target_status=target_status,
+                target_status="no_person",
                 target_confidence=0.0,
+                target_lost_frames=0,
             )
 
         selection = self._select_target_candidate(pose_candidates, previous)
         if selection["landmarks"] is None:
-            posture_errors = ["target_lost"]
-            if person_count > 1:
-                posture_errors.append("multi_person_detected")
-            return self._idle_feature(
+            return self._target_recovering_feature(
                 previous,
                 exercise_type,
-                posture_errors=posture_errors,
-                feedback="Target user was lost. Keep the locked user in frame or restart the session.",
-                clear_phase=True,
                 person_count=person_count,
-                target_status="target_lost",
-                target_confidence=selection["confidence"],
+                confidence=selection["confidence"],
+                extra_errors=["multi_person_detected"] if person_count > 1 else [],
             )
 
         landmarks = selection["landmarks"]
@@ -390,14 +397,15 @@ class PoseAnalyzer:
             "target_status": selection["status"],
             "target_confidence": selection["confidence"],
             "target_signature": selection["signature"],
+            "target_lost_frames": 0,
         }
         if not landmarks:
             return self._idle_feature(
                 previous,
                 exercise_type,
                 posture_errors=["no_person"],
-                feedback="몸 전체가 화면에 보이도록 조금 뒤로 이동해 주세요.",
-                clear_phase=True,
+                feedback="몸 전체가 화면에 보이도록 카메라 위치와 거리를 맞춰 주세요.",
+                clear_phase=False,
                 **target_updates,
             )
 
@@ -408,7 +416,7 @@ class PoseAnalyzer:
                 exercise_type,
                 posture_errors=["person_too_far"],
                 feedback="몸이 너무 작게 보여요. 카메라에 조금 더 가까이 서 주세요.",
-                clear_phase=True,
+                clear_phase=False,
                 **target_updates,
             )
         if self._has_partial_body(landmarks, required):
@@ -417,7 +425,7 @@ class PoseAnalyzer:
                 exercise_type,
                 posture_errors=["low_confidence", "partial_body"],
                 feedback="몸 전체가 화면 안에 들어오도록 위치를 조정해 주세요.",
-                clear_phase=True,
+                clear_phase=False,
                 **target_updates,
             )
         if not self._landmarks_are_confident(landmarks, required, exercise_type):
@@ -425,7 +433,7 @@ class PoseAnalyzer:
                 previous,
                 exercise_type,
                 posture_errors=["low_confidence"],
-                feedback="Low pose confidence. Adjust lighting and keep joints visible.",
+                feedback="조명과 자세를 조정해 관절이 선명하게 보이게 해 주세요.",
                 **target_updates,
             )
         try:
@@ -743,6 +751,39 @@ class PoseAnalyzer:
             feedback,
         )
 
+    def _target_recovering_feature(
+        self,
+        previous: ExerciseFeature,
+        exercise_type: str,
+        person_count: int,
+        confidence: float,
+        extra_errors: list[str] | None = None,
+    ) -> tuple[ExerciseFeature, str]:
+        lost_frames = previous.target_lost_frames + 1
+        extra_errors = extra_errors or []
+        if lost_frames <= self._target_lost_grace_frames:
+            posture_errors = ["target_recovering", *extra_errors]
+            feedback = "사용자를 다시 찾고 있어요. 화면 중앙에서 잠시 멈춰 주세요."
+            target_status = "target_recovering"
+        else:
+            posture_errors = ["target_lost", *extra_errors]
+            feedback = "처음 잡은 사용자를 놓쳤어요. 같은 사람이 화면 중앙에 다시 서거나 세션을 다시 시작해 주세요."
+            target_status = "target_lost"
+        return self._idle_feature(
+            previous,
+            exercise_type,
+            posture_errors=posture_errors,
+            feedback=feedback,
+            clear_phase=False,
+            person_count=person_count,
+            target_status=target_status,
+            target_confidence=round(max(0.0, confidence), 3),
+            target_signature=previous.target_signature,
+            target_lost_frames=lost_frames,
+            measurement_quality=target_status,
+            measurement_confidence=0.0,
+        )
+
     def _count_with_hysteresis(self, previous: ExerciseFeature, state: str) -> tuple[int, str | None]:
         count = previous.count
         phase = previous.rep_phase or (previous.state if previous.state in {"up", "down"} else None)
@@ -793,6 +834,7 @@ class PoseAnalyzer:
     def _has_blocking_errors(self, feature: ExerciseFeature) -> bool:
         blocking = {
             "no_person",
+            "target_recovering",
             "target_lost",
             "person_too_far",
             "partial_body",
@@ -812,10 +854,21 @@ class PoseAnalyzer:
                 "posture_errors": errors,
                 "measurement_quality": "fast_only",
                 "measurement_confidence": round(self._clamp(confidence), 3),
+                "model_disagreement_frames": 0,
             }
         )
 
     def _mark_model_disagreement(self, feature: ExerciseFeature, previous: ExerciseFeature) -> ExerciseFeature:
+        disagreement_frames = previous.model_disagreement_frames + 1
+        if disagreement_frames <= self._MODEL_DISAGREEMENT_GRACE_FRAMES:
+            confidence = min(feature.stability_score, feature.target_confidence or 0.0, 0.55)
+            return feature.model_copy(
+                update={
+                    "measurement_quality": "dual_check_pending",
+                    "measurement_confidence": round(self._clamp(confidence), 3),
+                    "model_disagreement_frames": disagreement_frames,
+                }
+            )
         feature = self._prevent_new_count(feature, previous)
         errors = list(feature.posture_errors)
         if "model_disagreement" not in errors:
@@ -825,6 +878,7 @@ class PoseAnalyzer:
                 "posture_errors": errors,
                 "measurement_quality": "model_disagreement",
                 "measurement_confidence": 0.0,
+                "model_disagreement_frames": disagreement_frames,
             }
         )
 
@@ -874,6 +928,8 @@ class PoseAnalyzer:
                 "exercise_confidence": confidence,
                 "goal_mismatch": goal_mismatch,
                 "classifier_window": window,
+                "target_lost_frames": 0,
+                "model_disagreement_frames": 0,
             }
         )
 
@@ -887,7 +943,7 @@ class PoseAnalyzer:
 
     def _select_target_candidate(self, candidates: list, previous: ExerciseFeature) -> dict[str, Any]:
         if not previous.target_signature:
-            selected = candidates[0]
+            selected = max(candidates, key=self._initial_target_score)
             return {
                 "landmarks": selected,
                 "status": "target_locked",
@@ -900,7 +956,7 @@ class PoseAnalyzer:
             for candidate in candidates
         ]
         confidence, selected = max(scored, key=lambda item: item[0])
-        if confidence < 0.45:
+        if confidence < self._TARGET_MATCH_MIN_CONFIDENCE:
             return {
                 "landmarks": None,
                 "status": "target_lost",
@@ -927,7 +983,7 @@ class PoseAnalyzer:
             for candidate in candidates
         ]
         confidence, selected = max(scored, key=lambda item: item[0])
-        if confidence < 0.45:
+        if confidence < self._TARGET_MATCH_MIN_CONFIDENCE:
             return {
                 "landmarks": None,
                 "confidence": round(max(0.0, confidence), 3),
@@ -950,7 +1006,7 @@ class PoseAnalyzer:
     def _initial_target_score(self, landmarks) -> float:
         signature = self._target_signature(landmarks)
         center_distance = abs(signature["center_x"] - 0.5)
-        return signature["height"] + (signature["width"] * 0.4) - center_distance
+        return signature["height"] + (signature["width"] * 0.4) - (center_distance * 0.5)
 
     def _target_match_confidence(self, landmarks, signature: dict[str, float]) -> float:
         current = self._target_signature(landmarks)
@@ -962,19 +1018,42 @@ class PoseAnalyzer:
         shoulder_delta = abs(current["shoulder_width"] - signature["shoulder_width"])
         hip_delta = abs(current["hip_width"] - signature["hip_width"])
         keypoint_delta = self._keypoint_distance(landmarks, signature)
-        penalty = (center_delta * 1.2) + (size_delta * 0.8) + (shoulder_delta * 0.8) + (hip_delta * 0.8) + (keypoint_delta * 0.6)
+        penalty = (
+            (center_delta * 0.9)
+            + (size_delta * 0.5)
+            + (shoulder_delta * 0.35)
+            + (hip_delta * 0.35)
+            + (keypoint_delta * 0.25)
+        )
         return self._clamp(1.0 - penalty)
 
     def _target_signature(self, landmarks) -> dict[str, float]:
-        names = ["LEFT_SHOULDER", "RIGHT_SHOULDER", "LEFT_HIP", "RIGHT_HIP"]
+        names = [
+            "LEFT_SHOULDER",
+            "RIGHT_SHOULDER",
+            "LEFT_ELBOW",
+            "RIGHT_ELBOW",
+            "LEFT_WRIST",
+            "RIGHT_WRIST",
+            "LEFT_HIP",
+            "RIGHT_HIP",
+            "LEFT_KNEE",
+            "RIGHT_KNEE",
+            "LEFT_ANKLE",
+            "RIGHT_ANKLE",
+        ]
         points = [landmarks[self._LANDMARK_INDEX[name]] for name in names]
         xs = [point.x for point in points]
         ys = [point.y for point in points]
+        shoulder_mid = self._midpoint(landmarks, "SHOULDER")
+        hip_mid = self._midpoint(landmarks, "HIP")
         signature = {
             "center_x": (min(xs) + max(xs)) / 2,
             "center_y": (min(ys) + max(ys)) / 2,
             "width": max(xs) - min(xs),
             "height": max(ys) - min(ys),
+            "torso_center_x": (shoulder_mid.x + hip_mid.x) / 2,
+            "torso_center_y": (shoulder_mid.y + hip_mid.y) / 2,
             "shoulder_width": self._width(landmarks, "SHOULDER"),
             "hip_width": self._width(landmarks, "HIP"),
         }
@@ -1035,7 +1114,8 @@ class PoseAnalyzer:
         width = max(point.x for point in points) - min(point.x for point in points)
         height = max(point.y for point in points) - min(point.y for point in points)
         person_scale = max(width, height)
-        return person_scale < self._threshold(exercise_type, "min_body_height", 0.22)
+        default_height = 0.12 if exercise_type == "pushup" else 0.18
+        return person_scale < self._threshold(exercise_type, "min_body_height", default_height)
 
     def _has_partial_body(self, landmarks, required_names: list[str]) -> bool:
         margin = 0.04
@@ -1054,7 +1134,7 @@ class PoseAnalyzer:
         exercise_type: str,
     ) -> bool:
         min_visibility = self._min_landmark_visibility(exercise_type)
-        min_ratio = self._threshold(exercise_type, "min_confident_landmark_ratio", 0.65)
+        min_ratio = self._threshold(exercise_type, "min_confident_landmark_ratio", 0.55)
         confident = 0
         for name in required_names:
             landmark = landmarks[self._LANDMARK_INDEX[name]]
@@ -1211,9 +1291,13 @@ class PoseAnalyzer:
         stability_score: float,
     ) -> str:
         feedback_by_error = {
+            "target_recovering": "사용자를 다시 찾고 있어요. 화면 중앙에서 잠시 멈춰 주세요.",
+            "target_lost": "처음 잡은 사용자를 놓쳤어요. 같은 사람이 화면 중앙에 다시 서거나 세션을 다시 시작해 주세요.",
+            "multi_person_detected": "다른 사람이 함께 잡혔어요. 운동하는 사람만 화면에 들어오게 해 주세요.",
             "person_too_far": "몸이 너무 작게 보여요. 카메라에 조금 더 가까이 서 주세요.",
             "partial_body": "몸 전체가 화면 안에 들어오도록 위치를 조정해 주세요.",
             "low_confidence": "조명과 자세를 조정해 관절이 선명하게 보이게 해 주세요.",
+            "model_disagreement": "두 포즈 모델의 판정이 달라 카운트를 보류했어요. 자세를 또렷하게 유지해 주세요.",
             "knees_caving_in": "무릎이 안쪽으로 모이지 않게 발끝 방향과 맞춰 주세요.",
             "back_leaning_forward": "상체를 세우고 중심을 천천히 안정시켜 주세요.",
             "hip_sagging": "엉덩이가 처지지 않게 몸통을 일직선으로 유지해 주세요.",
@@ -1285,7 +1369,7 @@ class PoseAnalyzer:
         if not candidates:
             return {
                 "valid": False,
-                "reason": "No full body detected. Step back into the camera frame.",
+                "reason": "전신이 보이지 않아요. 머리부터 발끝까지 화면 안에 들어오게 맞춰 주세요.",
                 "errors": ["no_person"],
                 "proportions": None,
             }
@@ -1345,14 +1429,14 @@ class PoseAnalyzer:
 
     def _baseline_reason(self, errors: list[str]) -> str:
         if "person_too_far" in errors:
-            return "Body is too small in frame. Move closer while keeping the whole body visible."
+            return "몸이 너무 작게 보여요. 전신이 보이는 상태에서 카메라에 조금 더 가까이 서 주세요."
         if "partial_body" in errors:
-            return "Full body is not visible. Fit head, torso, knees, and feet inside the frame."
+            return "전신이 보이지 않아요. 머리, 몸통, 무릎, 발끝이 모두 화면 안에 들어오게 해 주세요."
         if "model_disagreement" in errors:
-            return "Pose checks disagree. Hold still and keep the whole body visible."
+            return "포즈 확인 결과가 서로 달라요. 전신이 보이게 선 뒤 잠시 멈춰 주세요."
         if "low_confidence" in errors:
-            return "Pose confidence is low. Improve lighting and keep joints visible."
-        return "Full body is not visible. Step back so the camera can see you."
+            return "관절 인식이 불안정해요. 조명을 밝게 하고 팔과 다리가 잘 보이게 해 주세요."
+        return "전신이 보이지 않아요. 카메라가 몸 전체를 볼 수 있게 위치를 맞춰 주세요."
 
     def _body_proportions_from_landmarks(self, landmarks) -> dict[str, float]:
         shoulder_width = round(self._width(landmarks, "SHOULDER"), 4)

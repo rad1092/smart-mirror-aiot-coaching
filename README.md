@@ -147,6 +147,15 @@ Realtime updates include PC1 display fields such as `posture_errors`,
 quality. These fields are kept out of PC2 requests unless they are explicitly
 allowed by the PC2 payload contract.
 
+PC1 must keep uploading exercise frames while the session is running. Use
+`POST /api/analyze/exercise` every 300-500 ms and keep using the `ws_url` returned
+from `POST /api/sessions/start` for realtime updates. A slower cadence, such as
+1500 ms, can miss the down/up transition and prevent the exercise count from
+increasing. PC3 freezes count updates while `target_status` is
+`target_recovering` or `target_lost`, or while blocking posture errors such as
+`person_too_far`, `partial_body`, `low_confidence`, or `model_disagreement` are
+present.
+
 ## PC2 APIs
 
 PC3 uses these PC2 endpoints:

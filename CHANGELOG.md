@@ -6,12 +6,29 @@
 
 - 현재 브랜치: `main`
 - 원격 저장소: `origin=https://github.com/rad1092/smart-mirror-aiot-coaching.git`
-- 현재 HEAD: `61e3753 feat: require face detection for profile baseline`
-- 원격 `origin/main`: `61e3753`
+- 현재 HEAD: 이번 작업 커밋 기준
+- 원격 `origin/main`: push 후 이번 작업 커밋과 일치
 - Git tag: 없음
-- 문서 갱신 시각: `2026-05-13 16:43:52 +09:00`
+- 문서 갱신 시각: `2026-05-14 13:46:25 +09:00`
 
 현재 저장소에는 별도 tag가 없으므로, 아래 주요 커밋들을 실질적인 버전 경계로 봅니다.
+
+## 2026-05-14 13:46:25 +09:00 - 이번 커밋 - 사용자 추적 안정화와 실시간 프레임 계약 명확화
+
+주요 변경:
+
+- 첫 유효 pose로 target을 고정한 뒤 짧은 인식 끊김은 `target_recovering`으로 처리.
+- `TARGET_LOST_GRACE_FRAMES=8` 설정을 추가해 grace 구간 동안 count와 rep phase를 보존.
+- grace 초과 시에만 `target_lost`로 전환하고, 다른 사람이 들어와도 target을 자동 교체하지 않도록 추적 signature와 match 기준을 보강.
+- `model_disagreement`는 1프레임 즉시 차단하지 않고 연속 불일치일 때 count 차단.
+- 운동별 body height와 confident landmark ratio threshold를 완화.
+- PC1에 노출되는 feedback, baseline reason, fallback, coaching 문구를 자연스러운 한국어로 정리.
+- PC1 실시간 계약에 `/api/analyze/exercise`를 300-500ms 간격으로 반복 호출해야 한다는 조건을 명시.
+
+검증:
+
+- `uv run --with-requirements requirements.txt python -m pytest -q`
+  - `74 passed`
 
 ## 2026-05-13 16:43:52 +09:00 - 이번 커밋 - baseline 문구 단순화
 

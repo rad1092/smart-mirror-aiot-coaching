@@ -290,9 +290,15 @@ def test_dual_pose_blocks_count_when_models_disagree(monkeypatch):
     )
 
     assert feature.count == 0
-    assert feature.measurement_quality == "model_disagreement"
-    assert "model_disagreement" in feature.posture_errors
-    assert "disagree" in feedback
+    assert feature.measurement_quality == "dual_check_pending"
+    assert "model_disagreement" not in feature.posture_errors
+    assert "두 포즈 모델" in feedback
+
+    blocked_feature, _ = analyzer.analyze(_blank_frame(), feature, exercise_type="squat")
+
+    assert blocked_feature.count == 0
+    assert blocked_feature.measurement_quality == "model_disagreement"
+    assert "model_disagreement" in blocked_feature.posture_errors
 
 
 def test_dual_pose_keeps_fast_only_but_does_not_confirm_count_when_full_fails(monkeypatch):
@@ -307,7 +313,7 @@ def test_dual_pose_keeps_fast_only_but_does_not_confirm_count_when_full_fails(mo
     assert feature.count == 0
     assert feature.measurement_quality == "fast_only"
     assert "fast_only" in feature.posture_errors
-    assert "fast pose" in feedback
+    assert "빠른 추적" in feedback
 
 
 def test_pushup_counts_elbow_down_to_up_transition(monkeypatch):
@@ -413,7 +419,7 @@ def test_partial_body_is_blocked_as_low_confidence(monkeypatch):
 
     assert feature.state == "idle"
     assert feature.count == 2
-    assert feature.rep_phase is None
+    assert feature.rep_phase == "down"
     assert feature.posture_errors == ["low_confidence", "partial_body"]
     assert "화면 안" in feedback
 
@@ -485,10 +491,19 @@ def test_target_lost_does_not_switch_to_other_person(monkeypatch):
     monkeypatch.setattr(analyzer, "_detect_landmarks", lambda frame: [other_person])
     feature, _ = analyzer.analyze(_blank_frame(), locked_feature, exercise_type="squat")
 
-    assert feature.target_status == "target_lost"
+    assert feature.target_status == "target_recovering"
     assert feature.count == locked_feature.count
+    assert feature.rep_phase == locked_feature.rep_phase
     assert feature.target_signature == locked_feature.target_signature
-    assert "target_lost" in feature.posture_errors
+    assert "target_recovering" in feature.posture_errors
+
+    current = feature
+    for _ in range(analyzer._TARGET_LOST_GRACE_FRAMES):
+        current, _ = analyzer.analyze(_blank_frame(), current, exercise_type="squat")
+
+    assert current.target_status == "target_lost"
+    assert current.count == locked_feature.count
+    assert "target_lost" in current.posture_errors
 
 
 def test_target_reconnects_when_original_user_returns(monkeypatch):
@@ -501,7 +516,7 @@ def test_target_reconnects_when_original_user_returns(monkeypatch):
 
     monkeypatch.setattr(analyzer, "_detect_landmarks", lambda frame: [_shift_landmarks(_squat_landmarks("up"), 0.34)])
     lost_feature, _ = analyzer.analyze(_blank_frame(), locked_feature, exercise_type="squat")
-    assert lost_feature.target_status == "target_lost"
+    assert lost_feature.target_status == "target_recovering"
 
     monkeypatch.setattr(analyzer, "_detect_landmarks", lambda frame: [_squat_landmarks("up")])
     reconnected_feature, _ = analyzer.analyze(_blank_frame(), lost_feature, exercise_type="squat")

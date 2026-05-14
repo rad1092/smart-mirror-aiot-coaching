@@ -20,6 +20,33 @@ PC1 프론트엔드
 
 현재 구조에서 PC1은 PC2를 직접 호출하지 않습니다. PC3가 PC1과 PC2 사이의 계약 정렬, 검증, 변환, fallback을 담당합니다.
 
+## 2026-05-14 13:46:25 +09:00 - target tracking grace와 frame cadence 계약 추가
+
+변경 후 운동 중 흐름:
+
+```text
+PC1 exercise screen
+  -> POST /api/sessions/start
+      -> PC3가 ws_url 반환
+  -> WebSocket 연결
+  -> POST /api/analyze/exercise
+      -> 300-500ms 간격으로 반복
+      -> PC3가 locked target 기준으로 pose 분석
+      -> count/state/feedback/target_status broadcast
+  -> POST /api/sessions/{session_id}/stop
+      -> 측정 품질이 충분하면 PC2 운동 후 코칭 호출
+      -> 측정 품질이 낮으면 PC3 한국어 fallback 코칭 반환
+```
+
+중요한 점:
+
+- PC3 count는 시간 기준 자동 증가가 아니라 `up -> down -> up` 같은 pose state 전환 기준입니다.
+- PC1이 1500ms처럼 느리게 프레임을 보내면 down/up 전환을 놓쳐 count가 오르지 않을 수 있습니다.
+- 짧은 인식 끊김은 `target_recovering`으로 처리하며 기존 count와 rep phase를 보존합니다.
+- `TARGET_LOST_GRACE_FRAMES`를 넘길 때만 `target_lost`로 전환합니다.
+- `target_recovering`, `target_lost`, `person_too_far`, `partial_body`, `low_confidence`, `model_disagreement` 상태에서는 count 증가만 막고 기존 측정값은 유지합니다.
+- 다른 사람이 들어와도 새 target으로 자동 교체하지 않습니다. 새 target은 세션 재시작으로만 잡습니다.
+
 ## 2026-05-13 16:43:52 +09:00 - baseline 문구 단순화
 
 변경 후 흐름:

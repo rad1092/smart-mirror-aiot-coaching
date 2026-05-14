@@ -320,7 +320,7 @@ def test_profile_routine_returns_pc1_renderable_fallback_when_pc2_fails(client, 
     assert body["scheduled_dates"] == []
     assert body["weekly_routine"] == []
     assert body["start_exercise_type"] == body["items"][0]["exercise_type"]
-    assert "PC2 unavailable" in body["reason_lines"][0]
+    assert "PC2 응답을 받지 못해" in body["reason_lines"][0]
 
 
 def test_profile_routine_day_proxies_pc2_day_endpoint(client, monkeypatch):

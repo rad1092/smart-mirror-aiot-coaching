@@ -88,6 +88,13 @@ GOAL_TO_EXERCISE = {
     "build_habit": "knee_raise",
     "weight_management": "jumping_jack",
 }
+EXERCISE_LABELS_KO = {
+    "squat": "스쿼트",
+    "jumping_jack": "점핑잭",
+    "knee_raise": "무릎 들어올리기",
+    "lunge": "런지",
+    "pushup": "푸시업",
+}
 
 
 class CoachClient:
@@ -112,7 +119,7 @@ class CoachClient:
 
     async def generate_routine(self, request: RecommendationRequest) -> RecommendationResponse:
         if self._settings.mock_llm:
-            return self._routine_fallback_response(request, "PC2 routine generation is disabled by MOCK_LLM.")
+            return self._routine_fallback_response(request, "MOCK_LLM 설정으로 PC2 루틴 호출을 건너뛰고 PC3 기본 루틴을 표시합니다.")
 
         try:
             async with httpx.AsyncClient(timeout=self._settings.pc2_timeout_seconds) as client:
@@ -124,7 +131,7 @@ class CoachClient:
             return self.pc2_routine_response_to_recommendation(request, response.json())
         except Exception:
             logger.exception("PC2 routine API call failed. Falling back to local basic routine.")
-            return self._routine_fallback_response(request, "PC2 unavailable. Using a local basic routine.")
+            return self._routine_fallback_response(request, "PC2 응답을 받지 못해 PC3 기본 루틴을 표시합니다.")
 
     async def get_routine_day(self, user_id: str, target_date: date) -> RoutineDayResponse:
         url = self._routine_day_url(user_id, target_date)
@@ -141,17 +148,17 @@ class CoachClient:
         count = exercise.count if exercise else 0
         exercise_type = exercise.type if exercise else "squat"
         confidence = float(quality.get("measurement_confidence", 0.0))
-        message = "Measurement quality is low. Re-run the set with the full body clearly in frame."
+        message = "측정 품질이 낮아 운동 후 AI 코칭을 건너뛰었습니다. 전신이 잘 보이게 다시 촬영해 주세요."
         return CoachingResponse(
             summary=(
-                f"PC3 measured {count} reps, but the frame quality was not reliable enough "
-                f"for PC2 coaching. Measurement confidence: {confidence:.2f}."
+                f"PC3가 {count}회를 측정했지만 영상 품질이 낮아 PC2 코칭에 보내지 않았습니다. "
+                f"측정 신뢰도: {confidence:.2f}."
             ),
-            priority="measurement quality",
+            priority="측정 품질",
             routine=[
                 RoutineItem(
-                    title="Retake the set",
-                    description="Keep the locked user centered, visible from head to feet, and avoid other people entering.",
+                    title="다시 촬영",
+                    description="처음 잡은 사용자가 화면 중앙에 서고, 머리부터 발끝까지 보이며, 다른 사람이 들어오지 않게 해 주세요.",
                 )
             ],
             exercise_plan=[
@@ -160,18 +167,18 @@ class CoachClient:
                     sets=1,
                     reps=max(4, count if count else 6),
                     rest_sec=60,
-                    focus="clear camera framing",
-                    reason="PC3 skipped PC2 because the pose measurement quality was below the configured threshold.",
+                    focus="카메라 프레이밍",
+                    reason="자세 측정 품질이 기준보다 낮아 PC3가 PC2 호출을 건너뛰었습니다.",
                 )
             ],
             mirror_message=message,
-            warnings=["PC2 feedback was skipped because pose measurement quality was low."],
+            warnings=["자세 측정 품질이 낮아 PC2 운동 후 피드백을 요청하지 않았습니다."],
             pc2_payload=PC2Payload(
                 message=message,
                 display_lines=[
-                    "Keep your whole body visible",
-                    "Stay as the locked target user",
-                    "Repeat the set before requesting coaching",
+                    "머리부터 발끝까지 화면 안에 들어오게 해 주세요.",
+                    "처음 잡은 사용자가 계속 화면 중앙에 있어야 합니다.",
+                    "다시 운동을 측정한 뒤 코칭을 요청해 주세요.",
                 ],
             ),
         )
@@ -250,10 +257,10 @@ class CoachClient:
                 items.append(
                     RoutineItemPayload(
                         exercise_type=exercise.exercise,
-                        title=f"{day.day_label or 'Routine'} - {exercise.exercise.replace('_', ' ')}",
+                        title=f"{day.day_label or f'{day.day_index}일차'} - {self._exercise_label(exercise.exercise)}",
                         reps=max(1, int(reps or 8)),
                         rest_sec=max(0, int(rest_sec if rest_sec is not None else 60)),
-                        focus=exercise.focus or day.focus or "controlled posture",
+                        focus=exercise.focus or day.focus or "자세 안정",
                         summary=exercise.reason or day.focus or response_json.get("weekly_focus") or "",
                         sets=exercise.sets,
                         duration_sec=exercise.duration_sec,
@@ -268,15 +275,15 @@ class CoachClient:
                 break
 
         if not items:
-            return self._routine_fallback_response(request, "PC2 returned no usable exercise plan.")
+            return self._routine_fallback_response(request, "PC2 응답에서 사용할 수 있는 운동 계획을 찾지 못해 PC3 기본 루틴을 표시합니다.")
 
         cautions = [str(item) for item in response_json.get("cautions", []) if item]
-        weekly_focus = str(response_json.get("weekly_focus") or "Start with controlled posture.")
-        summary = str(response_json.get("summary") or "AI routine generated from your profile.")
+        weekly_focus = str(response_json.get("weekly_focus") or "자세를 안정적으로 유지하는 것부터 시작하세요.")
+        summary = str(response_json.get("summary") or "프로필을 기준으로 만든 운동 루틴입니다.")
         return RecommendationResponse(
             source="ai",
             difficulty=difficulty,
-            title="AI routine from PC2",
+            title="PC2 추천 루틴",
             description=summary,
             reason_lines=[weekly_focus, *cautions],
             estimated_minutes=self._estimate_minutes(items),
@@ -295,8 +302,8 @@ class CoachClient:
             user_id=str(response_json.get("user_id") or ""),
             scheduled_date=str(response_json.get("scheduled_date") or ""),
             day_index=int(response_json.get("day_index") or 1),
-            day_label=str(response_json.get("day_label") or "Day 1"),
-            focus=str(response_json.get("focus") or "controlled posture"),
+            day_label=str(response_json.get("day_label") or "1일차"),
+            focus=str(response_json.get("focus") or "자세 안정"),
             exercises=exercises,
             summary=str(response_json.get("summary") or ""),
             weekly_focus=str(response_json.get("weekly_focus") or ""),
@@ -335,8 +342,8 @@ class CoachClient:
             days.append(
                 WeeklyRoutineDayPayload(
                     day_index=int(day.get("day_index") or index),
-                    day_label=str(day.get("day_label") or f"Day {index}"),
-                    focus=str(day.get("focus") or "controlled posture"),
+                    day_label=str(day.get("day_label") or f"{index}일차"),
+                    focus=str(day.get("focus") or "자세 안정"),
                     exercises=exercises,
                 )
             )
@@ -360,7 +367,7 @@ class CoachClient:
                     reps=self._optional_int(item.get("reps")),
                     duration_sec=self._optional_int(item.get("duration_sec")),
                     rest_sec=self._optional_int(item.get("rest_sec")),
-                    focus=str(item.get("focus") or "controlled posture"),
+                    focus=str(item.get("focus") or "자세 안정"),
                     reason=str(item.get("reason") or ""),
                     how_to=str(item.get("how_to") or ""),
                     tips=str(item.get("tips") or ""),
@@ -394,19 +401,19 @@ class CoachClient:
         items = [
             RoutineItemPayload(
                 exercise_type=exercise_type,
-                title=f"Basic routine {index + 1}",
+                title=f"기본 루틴 {index + 1} - {self._exercise_label(exercise_type)}",
                 reps=max(6, 12 - index * 2),
                 rest_sec=60,
-                focus="controlled posture",
-                summary=reason if index == 0 else "Local fallback plan.",
+                focus="자세 안정",
+                summary=reason if index == 0 else "PC3 기본 루틴입니다.",
             )
             for index, exercise_type in enumerate(sequence)
         ]
         return RecommendationResponse(
             source="basic",
             difficulty=difficulty,
-            title="Basic fallback routine",
-            description="PC3 returned a local routine because PC2 routine planning was unavailable.",
+            title="PC3 기본 루틴",
+            description="PC2 루틴 응답을 받지 못해 PC3가 기본 루틴을 표시합니다.",
             reason_lines=[reason],
             estimated_minutes=self._estimate_minutes(items),
             start_exercise_type=items[0].exercise_type,
@@ -440,18 +447,21 @@ class CoachClient:
         total_rest = sum(item.rest_sec for item in items)
         return max(8, round((total_reps * 3 + total_rest) / 60))
 
+    def _exercise_label(self, exercise_type: str) -> str:
+        return EXERCISE_LABELS_KO.get(exercise_type, exercise_type.replace("_", " "))
+
     def _mock_response(self, payload: FeaturePayload) -> CoachingResponse:
         exercise = payload.features.exercise
         count = exercise.count if exercise else 0
         exercise_type = exercise.type if exercise else "squat"
-        mirror_message = "Keep the movement steady and prioritize posture over speed."
+        mirror_message = "속도보다 자세를 우선하면서 움직임을 안정적으로 이어가 주세요."
         return CoachingResponse(
-            summary=f"Completed {count} reps. This feedback is based on posture stability and baseline diff.",
-            priority="posture stability",
+            summary=f"{count}회를 완료했습니다. 이 피드백은 자세 안정성과 기준 자세 차이를 바탕으로 만든 PC3 기본 코칭입니다.",
+            priority="자세 안정",
             routine=[
                 RoutineItem(
-                    title="Check alignment",
-                    description="Match your knees with your feet and slow down the next set.",
+                    title="정렬 확인",
+                    description="무릎 방향을 발끝과 맞추고 다음 세트는 조금 더 천천히 진행해 주세요.",
                 )
             ],
             exercise_plan=[
@@ -460,14 +470,14 @@ class CoachClient:
                     sets=3,
                     reps=max(4, count if count else 6),
                     rest_sec=60,
-                    focus="controlled posture",
-                    reason="Local mock coaching is active, so PC3 returns a safe default plan.",
+                    focus="자세 안정",
+                    reason="PC3 기본 코칭이 활성화되어 안전한 기본 계획을 반환합니다.",
                 )
             ],
             mirror_message=mirror_message,
-            warnings=["Stop exercising if you feel pain."],
+            warnings=["통증이 느껴지면 즉시 운동을 멈추세요."],
             pc2_payload=PC2Payload(
                 message=mirror_message,
-                display_lines=["posture first", "steady tempo"],
+                display_lines=["자세를 먼저 안정시키기", "일정한 속도로 반복하기"],
             ),
         )

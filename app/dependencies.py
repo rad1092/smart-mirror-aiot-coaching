@@ -34,6 +34,7 @@ pose_analyzer = PoseAnalyzer(
     pose_pipeline_mode=settings.pose_pipeline_mode,
     accurate_interval=settings.pose_accurate_interval,
     max_poses=settings.max_poses,
+    target_lost_grace_frames=settings.target_lost_grace_frames,
 )
 def get_store() -> MemoryStore:
     return store

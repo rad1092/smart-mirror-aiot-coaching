@@ -110,7 +110,7 @@ def test_capture_baseline_body_rejects_low_quality_pose_without_saving(client, i
         def validate_body_baseline(self, frame):
             return {
                 "valid": False,
-                "reason": "Pose checks disagree.",
+                "reason": "포즈 확인 결과가 서로 달라요.",
                 "errors": ["model_disagreement"],
                 "proportions": None,
             }
@@ -129,7 +129,7 @@ def test_capture_baseline_body_rejects_low_quality_pose_without_saving(client, i
     assert response.json() == {
         "valid": False,
         "slot_type": "body_front_full",
-        "reason": "Pose checks disagree.",
+        "reason": "포즈 확인 결과가 서로 달라요.",
     }
     baseline = client.get("/api/baselines/users/rejected_user").json()
     assert baseline["source"] == "default"
@@ -172,7 +172,7 @@ def test_capture_face_front_rejects_when_no_face_detected(client, image_bytes, m
     assert response.status_code == 200
     assert response.json()["valid"] is False
     assert response.json()["slot_type"] == "face_front"
-    assert "Face is not visible" in response.json()["reason"]
+    assert "얼굴이 보이지 않아요" in response.json()["reason"]
     baseline = client.get("/api/baselines/users/no_face_user").json()
     assert baseline["source"] == "default"
 

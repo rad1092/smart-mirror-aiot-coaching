@@ -259,6 +259,22 @@ Form fields:
 
 PC3 handles realtime feedback locally. PC2 is not called for every frame.
 
+Frame cadence contract:
+
+- PC1 must call `POST /api/analyze/exercise` continuously while the exercise
+  session is running.
+- Recommended interval: 300-500 ms.
+- Do not use a slow interval such as 1500 ms for counting. PC3 counts repetitions
+  from pose state transitions like `up -> down -> up`, so sparse frames can miss
+  the transition and leave `count` unchanged.
+- PC1 should keep its in-flight guard so it does not send overlapping frame
+  uploads, but it should schedule the next attempt quickly after the previous
+  request finishes.
+- PC1 should log or display `state`, `count`, `posture_errors`, and
+  `target_status` during integration checks.
+- PC3 intentionally freezes count increases while the locked target is
+  recovering/lost or while blocking posture errors are present.
+
 Example WebSocket update:
 
 ```json

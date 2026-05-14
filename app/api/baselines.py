@@ -56,7 +56,7 @@ async def capture_baseline_slot(
 ) -> BaselineCaptureResponse:
     valid_slot_types = {"face_front", "body_front_full"}
     if slot_type not in valid_slot_types:
-        raise HTTPException(status_code=400, detail=f"Unknown slot_type: {slot_type!r}")
+        raise HTTPException(status_code=400, detail=f"지원하지 않는 기준 촬영 항목입니다: {slot_type!r}")
 
     image_bytes = await file.read()
     try:
@@ -87,7 +87,7 @@ async def capture_baseline_slot(
             slot_type=slot_type,
             reason=None
             if valid
-            else "Face is not visible. Take a simple front-facing profile photo with a little more light.",
+            else "얼굴이 보이지 않아요. 조명을 조금 밝게 하고 정면 프로필 사진처럼 촬영해 주세요.",
         )
 
     if pose_analyzer.use_mediapipe:
@@ -111,7 +111,7 @@ async def capture_baseline_slot(
     return BaselineCaptureResponse(
         valid=valid,
         slot_type=slot_type,
-        reason=None if valid else "Frame is too dark. Check the room lighting.",
+        reason=None if valid else "화면이 너무 어두워요. 조명을 확인해 주세요.",
     )
 
 

@@ -75,6 +75,7 @@ class MemoryStore:
             errors = set(feature.posture_errors)
             blocking_errors = {
                 "no_person",
+                "target_recovering",
                 "target_lost",
                 "person_too_far",
                 "partial_body",

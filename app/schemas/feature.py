@@ -36,6 +36,8 @@ class ExerciseFeature(BaseModel):
     active_side: str | None = None
     target_signature: dict[str, float] | None = Field(default=None, exclude=True)
     classifier_window: list[str] = Field(default_factory=list, exclude=True)
+    target_lost_frames: int = Field(default=0, exclude=True)
+    model_disagreement_frames: int = Field(default=0, exclude=True)
 
 
 class FeatureSet(BaseModel):
