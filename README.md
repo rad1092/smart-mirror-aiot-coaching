@@ -1,5 +1,47 @@
 # Smart Mirror PC3 Vision Gateway
 
+## PC1 / PC3 Connection Quick Setup
+
+PC1 connects only to PC3. PC3 is the gateway that calls PC2 when routine
+planning or post-workout coaching is needed. PC1 must not call PC2 directly.
+
+Local all-in-one defaults:
+
+```text
+PC1 UI: http://localhost:1420
+PC3 API: http://127.0.0.1:9000
+```
+
+PC1 `.env` for local checks:
+
+```env
+VITE_PC3_URL=http://127.0.0.1:9000
+VITE_DEVICE_ID=mirror_001
+```
+
+PC1 `.env` after physical split:
+
+```env
+VITE_PC3_URL=http://<PC3_LAN_IP>:9000
+VITE_DEVICE_ID=mirror_001
+```
+
+PC3 `.env` after physical split:
+
+```env
+HOST=<PC3_LAN_IP>
+PORT=9000
+WS_PUBLIC_HOST=<PC3_LAN_IP>
+PC2_COACH_API_URL=http://<PC2_LAN_IP>:7000/api/coach/generate
+PC2_ROUTINE_API_URL=http://<PC2_LAN_IP>:7000/api/routine/profile
+PC2_ROUTINE_DAY_API_URL=http://<PC2_LAN_IP>:7000/api/routine/profile/{user_id}/day
+MOCK_LLM=false
+```
+
+When PC1 is packaged with Tauri, `VITE_PC3_URL` is baked into the installer. If
+the PC3 IP changes, update PC1 `.env` and rebuild the PC1 installer before
+installing it on the mirror PC.
+
 PC3 is the exercise vision gateway for the smart mirror project. It owns baseline
 capture, pose analysis, exercise sessions, realtime WebSocket updates, and the
 safe bridge to PC2 coaching/routine APIs.
