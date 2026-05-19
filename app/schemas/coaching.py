@@ -21,6 +21,7 @@ class ExercisePlanItem(BaseModel):
 class PC2Payload(BaseModel):
     message: str
     display_lines: list[str] = Field(default_factory=list)
+    evidence: list[dict] = Field(default_factory=list)
 
 
 class CoachingResponse(BaseModel):

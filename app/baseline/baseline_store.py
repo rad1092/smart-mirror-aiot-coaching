@@ -96,6 +96,15 @@ class BaselineStore:
                 connection.commit()
             return deepcopy(merged)
 
+    def delete_baseline(self, user_id: str) -> None:
+        with self._lock:
+            if self._database_path is None:
+                self._memory_baselines.pop(user_id, None)
+                return
+            with self._connect() as connection:
+                connection.execute("DELETE FROM user_baselines WHERE user_id = ?", (user_id,))
+                connection.commit()
+
     def _get_user_baseline(self, user_id: str) -> dict[str, Any] | None:
         if self._database_path is None:
             baseline = self._memory_baselines.get(user_id)

@@ -31,6 +31,8 @@ class FeatureBuilder:
         return FeaturePayload(
             user_id=session.user_id,
             session_id=session.session_id,
+            routine_id=session.routine_id,
+            routine_day_id=session.routine_day_id,
             mode=session.mode.value,
             event=event,
             purpose=purpose,

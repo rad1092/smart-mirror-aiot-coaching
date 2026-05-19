@@ -19,12 +19,15 @@ class SessionStatus(str, Enum):
     running = "running"
     stopped = "stopped"
     completed = "completed"
+    skipped = "skipped"
 
 
 class SessionStartRequest(BaseModel):
     user_id: str = "default"
     mode: SessionMode
     goal: str | None = None
+    routine_id: str | None = None
+    routine_day_id: str | int | None = None
 
 
 class Session(BaseModel):
@@ -32,6 +35,8 @@ class Session(BaseModel):
     user_id: str
     mode: SessionMode
     goal: str | None = None
+    routine_id: str | None = None
+    routine_day_id: str | int | None = None
     status: SessionStatus
     created_at: datetime
     updated_at: datetime
@@ -52,3 +57,11 @@ class SessionResultResponse(BaseModel):
 
 class SessionStopResponse(SessionResultResponse):
     pass
+
+
+class SessionSkipRequest(BaseModel):
+    reason: str | None = None
+
+
+class SessionSkipResponse(SessionResultResponse):
+    skip_reason: str | None = None

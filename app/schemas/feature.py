@@ -47,6 +47,8 @@ class FeatureSet(BaseModel):
 class FeaturePayload(BaseModel):
     user_id: str
     session_id: str
+    routine_id: str | None = None
+    routine_day_id: str | int | None = None
     mode: SessionModeLiteral
     event: str
     features: FeatureSet

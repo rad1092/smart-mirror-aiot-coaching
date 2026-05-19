@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 from datetime import date
-import logging
 from urllib.parse import quote
 
 import httpx
 
 from app.config import Settings
-from app.schemas.coaching import CoachingResponse, ExercisePlanItem, PC2Payload, RoutineItem
+from app.schemas.coaching import CoachingResponse
 from app.schemas.feature import FeaturePayload
 from app.schemas.routine import (
     RecommendationRequest,
@@ -17,9 +16,6 @@ from app.schemas.routine import (
     WeeklyRoutineDayPayload,
     WeeklyRoutineExercisePayload,
 )
-
-
-logger = logging.getLogger(__name__)
 
 
 PC2_EXERCISE_FIELDS = {
@@ -35,6 +31,8 @@ PC2_EXERCISE_FIELDS = {
     "duration_sec",
     "duration_seconds",
     "tempo",
+    "measurement_quality",
+    "measurement_confidence",
 }
 PC2_BASELINE_DIFF_FIELDS = {
     "count_change",
@@ -58,42 +56,10 @@ ROUTINE_EXERCISE_ALIASES = {
     "push-up": "pushup",
     "push_up": "pushup",
 }
-GOAL_LABELS = {
-    "build_stamina": "체력 올리기",
-    "posture_correction": "자세 교정",
-    "lower_body_strength": "하체 강화",
-    "build_habit": "운동 습관 만들기",
-    "weight_management": "체중 관리",
-}
-EXPERIENCE_LABELS = {
-    "beginner": "초보",
-    "casual": "가벼운 운동",
-    "consistent": "꾸준한 운동",
-}
-LIMITATION_LABELS = {
-    "knee": "무릎",
-    "back": "허리",
-    "shoulder": "어깨",
-    "ankle": "발목",
-}
 WEEKLY_FREQUENCY_TO_DAYS = {
     "once_twice": 2,
     "three_four": 4,
     "five_plus": 5,
-}
-GOAL_TO_EXERCISE = {
-    "build_stamina": "jumping_jack",
-    "posture_correction": "squat",
-    "lower_body_strength": "squat",
-    "build_habit": "knee_raise",
-    "weight_management": "jumping_jack",
-}
-EXERCISE_LABELS_KO = {
-    "squat": "스쿼트",
-    "jumping_jack": "점핑잭",
-    "knee_raise": "무릎 들어올리기",
-    "lunge": "런지",
-    "pushup": "푸시업",
 }
 
 
@@ -102,36 +68,41 @@ class CoachClient:
         self._settings = settings
 
     async def generate(self, payload: FeaturePayload) -> CoachingResponse:
-        if self._settings.mock_llm:
-            return self._mock_response(payload)
+        async with httpx.AsyncClient(timeout=self._settings.pc2_timeout_seconds) as client:
+            response = await client.post(
+                self._settings.pc2_coach_api_url,
+                json=self.build_pc2_request_json(payload),
+            )
+            response.raise_for_status()
+        return CoachingResponse.model_validate(response.json())
 
-        try:
-            async with httpx.AsyncClient(timeout=self._settings.pc2_timeout_seconds) as client:
-                response = await client.post(
-                    self._settings.pc2_coach_api_url,
-                    json=self.build_pc2_request_json(payload),
-                )
-                response.raise_for_status()
-            return CoachingResponse.model_validate(response.json())
-        except Exception:
-            logger.exception("PC2 Coach API call failed. Falling back to mock coaching.")
-            return self._mock_response(payload)
+    async def generate_routine(
+        self,
+        request: RecommendationRequest,
+        user_history: dict | None = None,
+    ) -> RecommendationResponse:
+        async with httpx.AsyncClient(timeout=self._settings.pc2_timeout_seconds) as client:
+            response = await client.post(
+                self._settings.pc2_routine_api_url,
+                json=self.build_pc2_routine_request_json(request, user_history=user_history),
+            )
+            response.raise_for_status()
+        return self.pc2_routine_response_to_recommendation(request, response.json())
 
-    async def generate_routine(self, request: RecommendationRequest) -> RecommendationResponse:
-        if self._settings.mock_llm:
-            return self._routine_fallback_response(request, "MOCK_LLM 설정으로 PC2 루틴 호출을 건너뛰고 PC3 기본 루틴을 표시합니다.")
-
-        try:
-            async with httpx.AsyncClient(timeout=self._settings.pc2_timeout_seconds) as client:
-                response = await client.post(
-                    self._settings.pc2_routine_api_url,
-                    json=self.build_pc2_routine_request_json(request),
-                )
-                response.raise_for_status()
-            return self.pc2_routine_response_to_recommendation(request, response.json())
-        except Exception:
-            logger.exception("PC2 routine API call failed. Falling back to local basic routine.")
-            return self._routine_fallback_response(request, "PC2 응답을 받지 못해 PC3 기본 루틴을 표시합니다.")
+    async def get_routine_calendar(self, user_id: str, from_date: date, to_date: date) -> dict:
+        template = self._settings.pc2_routine_calendar_api_url
+        url = self._format_pc2_url(
+            template,
+            user_id=user_id,
+            from_date=from_date.isoformat(),
+            to_date=to_date.isoformat(),
+        )
+        params = {}
+        if "{from_date}" not in template:
+            params["from_date"] = from_date.isoformat()
+        if "{to_date}" not in template:
+            params["to_date"] = to_date.isoformat()
+        return await self._get_json(url, params=params or None)
 
     async def get_routine_day(self, user_id: str, target_date: date) -> RoutineDayResponse:
         url = self._routine_day_url(user_id, target_date)
@@ -143,45 +114,24 @@ class CoachClient:
             response.raise_for_status()
         return self.pc2_routine_day_response_to_pc1(response.json())
 
-    def measurement_quality_response(self, payload: FeaturePayload, quality: dict) -> CoachingResponse:
-        exercise = payload.features.exercise
-        count = exercise.count if exercise else 0
-        exercise_type = exercise.type if exercise else "squat"
-        confidence = float(quality.get("measurement_confidence", 0.0))
-        message = "측정 품질이 낮아 운동 후 AI 코칭을 건너뛰었습니다. 전신이 잘 보이게 다시 촬영해 주세요."
-        return CoachingResponse(
-            summary=(
-                f"PC3가 {count}회를 측정했지만 영상 품질이 낮아 PC2 코칭에 보내지 않았습니다. "
-                f"측정 신뢰도: {confidence:.2f}."
-            ),
-            priority="측정 품질",
-            routine=[
-                RoutineItem(
-                    title="다시 촬영",
-                    description="처음 잡은 사용자가 화면 중앙에 서고, 머리부터 발끝까지 보이며, 다른 사람이 들어오지 않게 해 주세요.",
-                )
-            ],
-            exercise_plan=[
-                ExercisePlanItem(
-                    exercise=exercise_type,
-                    sets=1,
-                    reps=max(4, count if count else 6),
-                    rest_sec=60,
-                    focus="카메라 프레이밍",
-                    reason="자세 측정 품질이 기준보다 낮아 PC3가 PC2 호출을 건너뛰었습니다.",
-                )
-            ],
-            mirror_message=message,
-            warnings=["자세 측정 품질이 낮아 PC2 운동 후 피드백을 요청하지 않았습니다."],
-            pc2_payload=PC2Payload(
-                message=message,
-                display_lines=[
-                    "머리부터 발끝까지 화면 안에 들어오게 해 주세요.",
-                    "처음 잡은 사용자가 계속 화면 중앙에 있어야 합니다.",
-                    "다시 운동을 측정한 뒤 코칭을 요청해 주세요.",
-                ],
-            ),
-        )
+    async def save_body_metric(self, user_id: str, payload: dict) -> dict:
+        url = self._format_pc2_url(self._settings.pc2_body_metrics_api_url, user_id=user_id)
+        return await self._post_json(url, payload)
+
+    async def get_user_progress(self, user_id: str, days: int) -> dict:
+        template = self._settings.pc2_progress_api_url
+        url = self._format_pc2_url(template, user_id=user_id, days=str(days))
+        params = None if "{days}" in template else {"days": days}
+        return await self._get_json(url, params=params)
+
+    async def get_coach_logs(self, user_id: str, limit: int) -> dict:
+        template = self._settings.pc2_coach_logs_api_url
+        url = self._format_pc2_url(template, user_id=user_id, limit=str(limit))
+        params = None if "{limit}" in template else {"limit": limit}
+        return await self._get_json(url, params=params)
+
+    async def save_workout_skip(self, payload: dict) -> dict:
+        return await self._post_json(self._settings.pc2_workout_skip_api_url, payload)
 
     def build_pc2_request_json(self, payload: FeaturePayload) -> dict:
         exercise = payload.features.exercise
@@ -197,6 +147,10 @@ class CoachClient:
                 "exercise": self._dump_pc2_exercise(exercise),
             },
         }
+        if payload.routine_id is not None:
+            request["routine_id"] = payload.routine_id
+        if payload.routine_day_id is not None:
+            request["routine_day_id"] = payload.routine_day_id
 
         exercise_diff = payload.baseline_diff.get("exercise") if payload.baseline_diff else None
         request["baseline_diff"] = (
@@ -213,13 +167,17 @@ class CoachClient:
             request["purpose"] = payload.purpose
         return request
 
-    def build_pc2_routine_request_json(self, request: RecommendationRequest) -> dict:
+    def build_pc2_routine_request_json(
+        self,
+        request: RecommendationRequest,
+        user_history: dict | None = None,
+    ) -> dict:
         profile = request.profile
         self._validate_routine_profile(profile)
         payload: dict = {
             "user_id": request.user_id,
-            "user_goal": request.pc2_user_goal or GOAL_LABELS[profile.goal],
-            "exercise_experience": request.pc2_exercise_experience or EXPERIENCE_LABELS[profile.experience_level],
+            "user_goal": request.pc2_user_goal or profile.goal,
+            "exercise_experience": request.pc2_exercise_experience or profile.experience_level,
             "available_days_per_week": (
                 request.pc2_available_days_per_week
                 or WEEKLY_FREQUENCY_TO_DAYS[profile.weekly_frequency]
@@ -227,7 +185,7 @@ class CoachClient:
             "restricted_body_parts": (
                 list(request.pc2_restricted_body_parts)
                 if request.pc2_restricted_body_parts
-                else [LIMITATION_LABELS[item] for item in profile.limitations]
+                else list(profile.limitations)
             ),
             "purpose": request.purpose or "pre_exercise_routine",
         }
@@ -237,6 +195,8 @@ class CoachClient:
             payload["weight_kg"] = profile.weight_kg
         if request.start_date is not None:
             payload["start_date"] = request.start_date.isoformat()
+        if user_history is not None:
+            payload["user_history"] = user_history
         return payload
 
     def pc2_routine_response_to_recommendation(
@@ -245,47 +205,24 @@ class CoachClient:
         response_json: dict,
     ) -> RecommendationResponse:
         difficulty = self._difficulty_from_profile(request)
-        items: list[RoutineItemPayload] = []
         pc3_payload = response_json.get("pc3_payload") if isinstance(response_json.get("pc3_payload"), dict) else {}
         weekly_routine = self._normalize_weekly_routine(
             response_json.get("weekly_routine") or pc3_payload.get("weekly_routine")
         )
-        for day in weekly_routine:
-            for exercise in day.exercises:
-                reps = exercise.reps or self._duration_to_reps(exercise.duration_sec)
-                rest_sec = exercise.rest_sec
-                items.append(
-                    RoutineItemPayload(
-                        exercise_type=exercise.exercise,
-                        title=f"{day.day_label or f'{day.day_index}일차'} - {self._exercise_label(exercise.exercise)}",
-                        reps=max(1, int(reps or 8)),
-                        rest_sec=max(0, int(rest_sec if rest_sec is not None else 60)),
-                        focus=exercise.focus or day.focus or "자세 안정",
-                        summary=exercise.reason or day.focus or response_json.get("weekly_focus") or "",
-                        sets=exercise.sets,
-                        duration_sec=exercise.duration_sec,
-                        reason=exercise.reason,
-                        how_to=exercise.how_to,
-                        tips=exercise.tips,
-                    )
-                )
-                if len(items) >= 3:
-                    break
-            if len(items) >= 3:
-                break
-
+        items = self._routine_items_from_weekly_routine(weekly_routine, response_json)
         if not items:
-            return self._routine_fallback_response(request, "PC2 응답에서 사용할 수 있는 운동 계획을 찾지 못해 PC3 기본 루틴을 표시합니다.")
+            raise ValueError("PC2 routine response did not contain a usable weekly routine.")
 
         cautions = [str(item) for item in response_json.get("cautions", []) if item]
-        weekly_focus = str(response_json.get("weekly_focus") or "자세를 안정적으로 유지하는 것부터 시작하세요.")
-        summary = str(response_json.get("summary") or "프로필을 기준으로 만든 운동 루틴입니다.")
+        weekly_focus = str(response_json.get("weekly_focus") or "")
+        summary = str(response_json.get("summary") or "PC2가 루틴을 생성했습니다.")
+        reason_lines = [item for item in [weekly_focus, *cautions] if item]
         return RecommendationResponse(
             source="ai",
             difficulty=difficulty,
             title="PC2 추천 루틴",
             description=summary,
-            reason_lines=[weekly_focus, *cautions],
+            reason_lines=reason_lines,
             estimated_minutes=self._estimate_minutes(items),
             start_exercise_type=items[0].exercise_type,
             items=items,
@@ -293,16 +230,18 @@ class CoachClient:
             start_date=pc3_payload.get("start_date") or response_json.get("start_date"),
             scheduled_dates=list(pc3_payload.get("scheduled_dates") or response_json.get("scheduled_dates") or []),
             weekly_routine=weekly_routine,
+            pc3_payload=pc3_payload,
         )
 
     def pc2_routine_day_response_to_pc1(self, response_json: dict) -> RoutineDayResponse:
         exercises = self._normalize_weekly_exercises(response_json.get("exercises"))
         return RoutineDayResponse(
+            routine_day_id=response_json.get("routine_day_id"),
             routine_id=str(response_json.get("routine_id") or ""),
             user_id=str(response_json.get("user_id") or ""),
             scheduled_date=str(response_json.get("scheduled_date") or ""),
             day_index=int(response_json.get("day_index") or 1),
-            day_label=str(response_json.get("day_label") or "1일차"),
+            day_label=str(response_json.get("day_label") or "Day 1"),
             focus=str(response_json.get("focus") or "자세 안정"),
             exercises=exercises,
             summary=str(response_json.get("summary") or ""),
@@ -328,6 +267,59 @@ class CoachClient:
             target_date=target_date.isoformat(),
         )
 
+    async def _get_json(self, url: str, params: dict | None = None) -> dict:
+        async with httpx.AsyncClient(timeout=self._settings.pc2_timeout_seconds) as client:
+            response = await client.get(url, params=params)
+            response.raise_for_status()
+        return self._response_json_object(response)
+
+    async def _post_json(self, url: str, payload: dict) -> dict:
+        async with httpx.AsyncClient(timeout=self._settings.pc2_timeout_seconds) as client:
+            response = await client.post(url, json=payload)
+            response.raise_for_status()
+        return self._response_json_object(response)
+
+    def _response_json_object(self, response: httpx.Response) -> dict:
+        data = response.json()
+        if not isinstance(data, dict):
+            raise ValueError("PC2 response must be a JSON object.")
+        return data
+
+    def _format_pc2_url(self, template: str, **values: str) -> str:
+        encoded = {key: quote(str(value), safe="") for key, value in values.items()}
+        return template.format(**encoded)
+
+    def _routine_items_from_weekly_routine(
+        self,
+        weekly_routine: list[WeeklyRoutineDayPayload],
+        response_json: dict,
+    ) -> list[RoutineItemPayload]:
+        items: list[RoutineItemPayload] = []
+        for day in weekly_routine:
+            for exercise in day.exercises:
+                reps = exercise.reps or self._duration_to_reps(exercise.duration_sec)
+                rest_sec = exercise.rest_sec
+                items.append(
+                    RoutineItemPayload(
+                        exercise_type=exercise.exercise,
+                        title=f"{day.day_label or f'Day {day.day_index}'} - {self._exercise_label(exercise.exercise)}",
+                        reps=max(1, int(reps or 8)),
+                        rest_sec=max(0, int(rest_sec if rest_sec is not None else 60)),
+                        focus=exercise.focus or day.focus or "자세 안정",
+                        summary=exercise.reason or day.focus or response_json.get("weekly_focus") or "",
+                        sets=exercise.sets,
+                        duration_sec=exercise.duration_sec,
+                        reason=exercise.reason,
+                        how_to=exercise.how_to,
+                        tips=exercise.tips,
+                    )
+                )
+                if len(items) >= 3:
+                    break
+            if len(items) >= 3:
+                break
+        return items
+
     def _normalize_weekly_routine(self, value) -> list[WeeklyRoutineDayPayload]:
         if not isinstance(value, list):
             return []
@@ -342,7 +334,7 @@ class CoachClient:
             days.append(
                 WeeklyRoutineDayPayload(
                     day_index=int(day.get("day_index") or index),
-                    day_label=str(day.get("day_label") or f"{index}일차"),
+                    day_label=str(day.get("day_label") or f"Day {index}"),
                     focus=str(day.get("focus") or "자세 안정"),
                     exercises=exercises,
                 )
@@ -394,32 +386,6 @@ class CoachClient:
             return "easy"
         return "normal"
 
-    def _routine_fallback_response(self, request: RecommendationRequest, reason: str) -> RecommendationResponse:
-        difficulty = self._difficulty_from_profile(request)
-        primary = GOAL_TO_EXERCISE.get(request.profile.goal or "", "squat")
-        sequence = [primary, "knee_raise", "pushup"]
-        items = [
-            RoutineItemPayload(
-                exercise_type=exercise_type,
-                title=f"기본 루틴 {index + 1} - {self._exercise_label(exercise_type)}",
-                reps=max(6, 12 - index * 2),
-                rest_sec=60,
-                focus="자세 안정",
-                summary=reason if index == 0 else "PC3 기본 루틴입니다.",
-            )
-            for index, exercise_type in enumerate(sequence)
-        ]
-        return RecommendationResponse(
-            source="basic",
-            difficulty=difficulty,
-            title="PC3 기본 루틴",
-            description="PC2 루틴 응답을 받지 못해 PC3가 기본 루틴을 표시합니다.",
-            reason_lines=[reason],
-            estimated_minutes=self._estimate_minutes(items),
-            start_exercise_type=items[0].exercise_type,
-            items=items,
-        )
-
     def _normalize_routine_exercise(self, value) -> str | None:
         raw_label = str(value or "").strip().lower()
         if raw_label in ROUTINE_EXERCISE_ALIASES:
@@ -448,36 +414,4 @@ class CoachClient:
         return max(8, round((total_reps * 3 + total_rest) / 60))
 
     def _exercise_label(self, exercise_type: str) -> str:
-        return EXERCISE_LABELS_KO.get(exercise_type, exercise_type.replace("_", " "))
-
-    def _mock_response(self, payload: FeaturePayload) -> CoachingResponse:
-        exercise = payload.features.exercise
-        count = exercise.count if exercise else 0
-        exercise_type = exercise.type if exercise else "squat"
-        mirror_message = "속도보다 자세를 우선하면서 움직임을 안정적으로 이어가 주세요."
-        return CoachingResponse(
-            summary=f"{count}회를 완료했습니다. 이 피드백은 자세 안정성과 기준 자세 차이를 바탕으로 만든 PC3 기본 코칭입니다.",
-            priority="자세 안정",
-            routine=[
-                RoutineItem(
-                    title="정렬 확인",
-                    description="무릎 방향을 발끝과 맞추고 다음 세트는 조금 더 천천히 진행해 주세요.",
-                )
-            ],
-            exercise_plan=[
-                ExercisePlanItem(
-                    exercise=exercise_type,
-                    sets=3,
-                    reps=max(4, count if count else 6),
-                    rest_sec=60,
-                    focus="자세 안정",
-                    reason="PC3 기본 코칭이 활성화되어 안전한 기본 계획을 반환합니다.",
-                )
-            ],
-            mirror_message=mirror_message,
-            warnings=["통증이 느껴지면 즉시 운동을 멈추세요."],
-            pc2_payload=PC2Payload(
-                message=mirror_message,
-                display_lines=["자세를 먼저 안정시키기", "일정한 속도로 반복하기"],
-            ),
-        )
+        return exercise_type.replace("_", " ")

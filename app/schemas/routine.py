@@ -17,7 +17,7 @@ ExerciseGoal = Literal[
 ]
 ExerciseLimitation = Literal["knee", "back", "shoulder", "ankle"]
 ExerciseType = Literal["squat", "jumping_jack", "knee_raise", "lunge", "pushup"]
-RoutineSource = Literal["ai", "basic"]
+RoutineSource = Literal["ai"]
 WeeklyExerciseFrequency = Literal["once_twice", "three_four", "five_plus"]
 
 
@@ -94,9 +94,11 @@ class RecommendationResponse(BaseModel):
     start_date: str | None = None
     scheduled_dates: list[str] = Field(default_factory=list)
     weekly_routine: list[WeeklyRoutineDayPayload] = Field(default_factory=list)
+    pc3_payload: dict = Field(default_factory=dict)
 
 
 class RoutineDayResponse(BaseModel):
+    routine_day_id: int | None = None
     routine_id: str
     user_id: str
     scheduled_date: str

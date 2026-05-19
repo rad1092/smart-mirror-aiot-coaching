@@ -26,6 +26,8 @@ def test_feature_builder_builds_exercise_payload(baseline_path):
         user_id="default",
         mode=SessionMode.exercise,
         goal="squat",
+        routine_id="routine_test",
+        routine_day_id=3,
         status=SessionStatus.running,
         created_at=now,
         updated_at=now,
@@ -35,6 +37,8 @@ def test_feature_builder_builds_exercise_payload(baseline_path):
     payload = builder.build_payload(session, "session_completed", features)
 
     assert payload.mode == "exercise"
+    assert payload.routine_id == "routine_test"
+    assert payload.routine_day_id == 3
     assert payload.features.exercise is not None
     assert payload.baseline_diff["exercise"]["count_change"] == -3
     assert payload.environment is not None

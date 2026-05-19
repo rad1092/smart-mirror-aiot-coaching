@@ -7,9 +7,10 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import ValidationError
 
 from app.baseline.baseline_service import BaselineService
-from app.dependencies import get_baseline_service, get_coach_client
+from app.dependencies import get_app_store, get_baseline_service, get_coach_client
 from app.llm_client.coach_client import CoachClient
 from app.schemas.routine import RecommendationRequest, RecommendationResponse, RoutineDayResponse
+from app.storage.app_store import AppStore
 
 
 router = APIRouter(prefix="/api/routines", tags=["routines"])
@@ -20,47 +21,79 @@ async def generate_profile_routine(
     payload: dict = Body(...),
     baseline_service: BaselineService = Depends(get_baseline_service),
     coach_client: CoachClient = Depends(get_coach_client),
+    app_store: AppStore = Depends(get_app_store),
 ) -> RecommendationResponse:
     request = _normalize_routine_request(payload)
     _validate_profile(request)
     _validate_saved_baseline(request.user_id, baseline_service)
     try:
-        return await coach_client.generate_routine(request)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
-@router.get("/profile/{user_id}/day", response_model=RoutineDayResponse)
-async def get_profile_routine_day(
-    user_id: str,
-    target_date: date = Query(...),
-    coach_client: CoachClient = Depends(get_coach_client),
-) -> RoutineDayResponse:
-    try:
-        return await coach_client.get_routine_day(user_id, target_date)
+        app_store.upsert_profile(_profile_for_store(request))
+        user_history = app_store.get_user_history_snapshot(request.user_id)
+        generated = await coach_client.generate_routine(request, user_history=user_history)
+        stored = app_store.save_routine_plan(request, generated)
+        return RecommendationResponse.model_validate(stored)
     except httpx.HTTPStatusError as exc:
-        if exc.response.status_code == 404:
-            raise HTTPException(
-                status_code=404,
-                detail={"reason": "routine_day_not_found"},
-            ) from exc
         raise HTTPException(
             status_code=502,
             detail={
-                "reason": "pc2_routine_day_failed",
+                "reason": "pc2_routine_failed",
                 "status_code": exc.response.status_code,
             },
         ) from exc
     except httpx.RequestError as exc:
         raise HTTPException(
             status_code=503,
-            detail={"reason": "pc2_routine_day_unavailable"},
+            detail={"reason": "pc2_routine_unavailable"},
         ) from exc
-    except (TypeError, ValueError, ValidationError) as exc:
+    except (TypeError, ValidationError) as exc:
         raise HTTPException(
             status_code=502,
-            detail={"reason": "invalid_pc2_routine_day_response"},
+            detail={"reason": "invalid_pc2_routine_response"},
         ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={"reason": "invalid_pc2_routine_response"},
+        ) from exc
+
+
+@router.get("/profile/{user_id}/day", response_model=RoutineDayResponse)
+async def get_profile_routine_day(
+    user_id: str,
+    target_date: date = Query(...),
+    app_store: AppStore = Depends(get_app_store),
+) -> RoutineDayResponse:
+    routine_day = app_store.get_routine_day(user_id, target_date.isoformat())
+    if routine_day is None:
+        raise HTTPException(status_code=404, detail={"reason": "routine_day_not_found"})
+    return RoutineDayResponse.model_validate(routine_day)
+
+
+@router.get("/profile/{user_id}/calendar")
+async def get_profile_routine_calendar(
+    user_id: str,
+    from_date: date = Query(...),
+    to_date: date = Query(...),
+    app_store: AppStore = Depends(get_app_store),
+) -> dict:
+    return app_store.get_routine_calendar(user_id, from_date.isoformat(), to_date.isoformat())
+
+
+def _raise_pc2_http_error(exc: httpx.HTTPStatusError, reason: str) -> None:
+    status_code = exc.response.status_code
+    if 400 <= status_code < 500:
+        raise HTTPException(status_code=status_code, detail=_pc2_error_detail(exc.response)) from exc
+    raise HTTPException(
+        status_code=502,
+        detail={"reason": reason, "status_code": status_code},
+    ) from exc
+
+
+def _pc2_error_detail(response: httpx.Response):
+    try:
+        return response.json()
+    except ValueError:
+        return response.text
 
 
 def _normalize_routine_request(payload: dict) -> RecommendationRequest:
@@ -128,6 +161,20 @@ def _validate_profile(request: RecommendationRequest) -> None:
                 "fields": missing,
             },
         )
+
+
+def _profile_for_store(request: RecommendationRequest) -> dict:
+    profile = request.profile
+    return {
+        "id": request.user_id,
+        "name": profile.name or request.user_id,
+        "weight_kg": profile.weight_kg or 0,
+        "height_cm": profile.height_cm or 0,
+        "goal": profile.goal,
+        "experience_level": profile.experience_level,
+        "weekly_frequency": profile.weekly_frequency,
+        "limitations": list(profile.limitations),
+    }
 
 
 def _goal_from_user_goal(value) -> str:

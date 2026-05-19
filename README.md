@@ -1,32 +1,71 @@
-# Smart Mirror PC3 Vision Gateway
+# PC3 Smart Mirror Vision Gateway
 
-## PC1 / PC3 Connection Quick Setup
+PC3는 PC1이 바라보는 단일 API 서버입니다. 카메라 baseline, 운동 세션, 자세 분석, WebSocket, 사용자 앱 데이터 저장, PC2 호출을 담당합니다.
 
-PC1 connects only to PC3. PC3 is the gateway that calls PC2 when routine
-planning or post-workout coaching is needed. PC1 must not call PC2 directly.
+런타임 연결은 아래 구조로 고정합니다.
 
-Local all-in-one defaults:
+```text
+PC1 UI -> PC3 Vision Gateway -> PC2 NVIDIA/RAG Engine
+```
+
+PC1은 PC3만 호출합니다. PC2를 직접 호출하지 않습니다. PC3만 PC2를 호출합니다.
+
+## 현재 저장 책임
+
+PC3가 사용자 앱 데이터의 원본입니다.
+
+- 사용자 프로필
+- baseline 상태
+- 루틴 플랜
+- 날짜별 루틴
+- 몸무게 기록
+- 운동 결과
+- 코칭 로그
+
+PC2는 NVIDIA/RAG 생성 엔진입니다. 루틴과 코칭 JSON을 만들어주지만, PC1 화면에서 다시 불러와야 하는 사용자 데이터의 원본은 PC3 SQLite app DB입니다.
+
+## 로컬 실행 구조
+
+같은 컴퓨터에서 PC1, PC2, PC3를 모두 띄울 때 기본값입니다.
 
 ```text
 PC1 UI: http://localhost:1420
+PC2 API: http://127.0.0.1:7000
 PC3 API: http://127.0.0.1:9000
 ```
 
-PC1 `.env` for local checks:
+PC1 `.env`:
 
 ```env
 VITE_PC3_URL=http://127.0.0.1:9000
 VITE_DEVICE_ID=mirror_001
 ```
 
-PC1 `.env` after physical split:
+PC3 `.env`:
+
+```env
+HOST=127.0.0.1
+PORT=9000
+PC2_COACH_API_URL=http://127.0.0.1:7000/api/coach/generate
+PC2_ROUTINE_API_URL=http://127.0.0.1:7000/api/routine/profile
+PC2_TIMEOUT_SECONDS=120
+CORS_ALLOW_ORIGINS=http://localhost:1420,http://127.0.0.1:1420,tauri://localhost
+BASELINE_DB_PATH=./data/baselines.sqlite3
+APP_DB_PATH=./data/app.sqlite3
+```
+
+## 물리 분리 연결법
+
+나중에 PC1, PC2, PC3가 서로 다른 컴퓨터로 나뉘면 IP만 바꿉니다.
+
+PC1 `.env`:
 
 ```env
 VITE_PC3_URL=http://<PC3_LAN_IP>:9000
 VITE_DEVICE_ID=mirror_001
 ```
 
-PC3 `.env` after physical split:
+PC3 `.env`:
 
 ```env
 HOST=<PC3_LAN_IP>
@@ -34,210 +73,109 @@ PORT=9000
 WS_PUBLIC_HOST=<PC3_LAN_IP>
 PC2_COACH_API_URL=http://<PC2_LAN_IP>:7000/api/coach/generate
 PC2_ROUTINE_API_URL=http://<PC2_LAN_IP>:7000/api/routine/profile
-PC2_ROUTINE_DAY_API_URL=http://<PC2_LAN_IP>:7000/api/routine/profile/{user_id}/day
-MOCK_LLM=false
+PC2_TIMEOUT_SECONDS=120
+CORS_ALLOW_ORIGINS=http://<PC1_LAN_ORIGIN>:1420,tauri://localhost
 ```
 
-When PC1 is packaged with Tauri, `VITE_PC3_URL` is baked into the installer. If
-the PC3 IP changes, update PC1 `.env` and rebuild the PC1 installer before
-installing it on the mirror PC.
+PC2는 `<PC2_LAN_IP>:7000`에서 실행되어야 합니다.
 
-PC3 is the exercise vision gateway for the smart mirror project. It owns baseline
-capture, pose analysis, exercise sessions, realtime WebSocket updates, and the
-safe bridge to PC2 coaching/routine APIs.
+중요: PC1 Tauri 설치 파일에는 `VITE_PC3_URL`이 빌드 시점에 들어갑니다. PC3 IP가 바뀌면 PC1 설치 파일을 다시 빌드해야 합니다.
 
-PC3 does not vendor PC1 or PC2 code. PC1 remains the frontend. PC2 remains the
-LLM coaching server. PC3 validates and normalizes the data that moves between
-them.
+## PC3 실행
 
-## Runtime Roles
-
-| PC | Role |
-| --- | --- |
-| PC1 | Exercise-only smart mirror frontend |
-| PC2 | LLM routine planning and post-exercise coaching server |
-| PC3 | Baseline, pose analysis, target tracking, session, API bridge |
-
-PC3 never sends raw images, base64 frames, videos, full landmarks, segmentation
-masks, or PC1 display-only fields to PC2. PC2 receives only whitelisted exercise
-or routine payloads.
-
-## PC1 UI Contract
-
-PC1 UI/UX 작업자는 [PC1_UI_CONTRACT.md](PC1_UI_CONTRACT.md)를 우선 계약 문서로 사용합니다. 이 문서는 baseline, 루틴 추천, 날짜별 루틴, 운동 화면, WebSocket, 운동 결과 화면에서 PC1이 PC3와 맞춰야 하는 API/필드/표시 기준을 화면 흐름 기준으로 정리합니다.
-
-## Run
-
-```bash
-pip install -r requirements.txt
-uvicorn app.main:app --host 127.0.0.1 --port 9000 --reload
-```
-
-Recommended Windows/uv path:
-
-```bash
+```powershell
+cd C:\groom\pc3-vision-gateway
 uv run --with-requirements requirements.txt python -m uvicorn app.main:app --host 127.0.0.1 --port 9000 --reload
 ```
 
-## Environment
+물리 분리 상태에서 외부 PC1이 접속해야 하면 `--host <PC3_LAN_IP>` 또는 `--host 0.0.0.0`로 실행합니다.
 
-```env
-PC2_COACH_API_URL=http://localhost:7000/api/coach/generate
-PC2_ROUTINE_API_URL=http://localhost:7000/api/routine/profile
-PC2_ROUTINE_DAY_API_URL=http://localhost:7000/api/routine/profile/{user_id}/day
-MOCK_LLM=true
-HOST=127.0.0.1
-PORT=9000
-CORS_ALLOW_ORIGINS=http://localhost:1420,http://127.0.0.1:1420,tauri://localhost
+## PC1이 호출하는 API
 
-USE_MEDIAPIPE_TASKS=true
-POSE_PIPELINE_MODE=dual
-POSE_MODEL_VARIANT=full
-POSE_FAST_MODEL_VARIANT=lite
-POSE_ACCURATE_MODEL_VARIANT=full
-POSE_ACCURATE_INTERVAL=1
-MAX_POSES=3
-MIN_VALID_FRAME_RATIO=0.55
-MAX_MODEL_DISAGREEMENT_RATIO=0.30
+### 사용자 프로필
 
-CONFIG_EXERCISE_THRESHOLDS=./config/exercise_thresholds.json
-EXERCISE_RULES_PATH=./data/exercise_rules.json
-EXERCISE_CLASSIFIER_PATH=./models/exercise_classifier/exercise_classifier.json
-BASELINE_DB_PATH=./data/baselines.sqlite3
-```
+- `GET /api/users/profiles`
+- `POST /api/users/profiles`
+- `PUT /api/users/profiles/{user_id}`
+- `DELETE /api/users/profiles/{user_id}`
 
-Set `MOCK_LLM=false` only when PC2 is running.
+프로필 삭제는 해당 사용자 앱 데이터와 baseline을 같이 삭제합니다. 별도 이중 확인은 PC3에서 만들지 않습니다.
 
-## PC1 APIs
+### Baseline
 
-### Baseline Capture
+- `GET /api/baselines/users/{user_id}`
+- `POST /api/baselines/users/{user_id}/capture`
 
-```http
-POST /api/baselines/users/{user_id}/capture
-Content-Type: multipart/form-data
-```
+PC3는 baseline 측정값과 slot 상태만 저장합니다. raw image를 장기 저장하지 않습니다.
 
-Form fields:
+### 루틴과 달력
 
-- `slot_type`: `face_front`, `body_front_full`
-- `file`: captured image file
+- `POST /api/routines/profile`
+- `GET /api/routines/profile/{user_id}/day?target_date=YYYY-MM-DD`
+- `GET /api/routines/profile/{user_id}/calendar?from_date=YYYY-MM-DD&to_date=YYYY-MM-DD`
 
-Response:
+루틴 생성 시 PC3는 PC2에 생성 요청을 보낸 뒤, 받은 루틴과 날짜별 루틴을 PC3 app DB에 저장합니다. 이후 day/calendar 조회는 PC3 DB에서 반환합니다.
 
-```json
-{
-  "valid": true,
-  "slot_type": "body_front_full",
-  "reason": null
-}
-```
+### 기록과 코칭
 
-PC3 stores validated baseline measurements and slot checkpoints, not the raw
-source images.
+- `POST /api/users/{user_id}/body-metrics`
+- `GET /api/users/{user_id}/progress?days=30`
+- `GET /api/coach/logs/{user_id}?limit=100`
 
-`face_front` is only a simple profile-photo checkpoint. PC3 checks that a
-front-facing face is visible in a decodable, non-dark frame; it does not run
-identity recognition or send face features to PC2.
+body metric, progress, coach logs는 PC3 app DB 기준으로 반환합니다.
 
-### Pre-Exercise Routine
+### 운동 세션
 
-```http
-POST /api/routines/profile
-Content-Type: application/json
-```
+- `POST /api/sessions/start`
+- `POST /api/sessions/{session_id}/stop`
+- `POST /api/sessions/{session_id}/skip`
+- `GET /api/sessions/{session_id}/result`
+- `ws://<PC3_HOST>:9000/ws/sessions/{session_id}`
 
-PC1 sends its existing `RecommendationRequestPayload`. PC3 checks that the
-profile is complete and confirms the saved PC3 baseline has all required
-user-source slots:
+session stop은 PC2에 코칭을 요청하고, 받은 코칭과 운동 결과를 PC3 app DB에 저장합니다.
 
-- `face_front`
-- `body_front_full`
+session skip은 완료로 위장하지 않습니다. PC2 코칭을 호출하지 않고 PC3 app DB에 `skipped` 운동 결과로 저장합니다.
 
-The baseline contract is intentionally small: a front profile face checkpoint
-and a front full-body checkpoint are enough before routine planning.
+## PC2로 보내는 값
 
-PC3 also accepts the newer flat routine request documented by PC2, including
-optional `start_date`. PC3 then calls PC2 `POST /api/routine/profile` with a
-sanitized request, preserves PC2 schedule metadata (`routine_id`, `start_date`,
-`scheduled_dates`) and detailed routine instructions (`how_to`, `tips`), and
-still returns the existing PC1 `items` preview. If PC2 is unavailable, PC3
-returns a PC1-renderable basic fallback response with `source="basic"` and a
-reason that PC2 was unavailable.
+PC3는 PC2에 필요한 값만 보냅니다.
 
-```http
-GET /api/routines/profile/{user_id}/day?target_date=YYYY-MM-DD
-```
+- `user_id`
+- `session_id`
+- `routine_id`
+- `routine_day_id`
+- `mode`
+- `event`
+- `features.exercise.type`
+- `features.exercise.count`
+- `features.exercise.stability_score`
+- `features.exercise.posture_errors`
+- `features.exercise.duration_sec`
+- `features.exercise.measurement_quality`
+- `features.exercise.measurement_confidence`
+- 허용된 baseline diff 값
 
-PC3 proxies this to PC2 for date-based routine lookup and preserves the selected
-day's `message`, `exercises`, `how_to`, and `tips`.
+PC3는 raw frame, video, full landmarks, segmentation, person count, target status, classifier window, PC1 UI-only state를 PC2로 보내지 않습니다.
 
-### Exercise Session
+## 저장 파일
 
-```http
-POST /api/sessions/start
-POST /api/analyze/exercise
-POST /api/sessions/{session_id}/stop
-WS   /ws/sessions/{session_id}
-```
+기본 저장 경로:
 
-Supported exercise goals:
+- baseline DB: `data/baselines.sqlite3`
+- app DB: `data/app.sqlite3`
 
-- `squat`
-- `jumping_jack`
-- `knee_raise`
-- `lunge`
-- `pushup`
+이 DB 파일은 로컬 런타임 데이터입니다. Git에 올리지 않습니다.
 
-Realtime updates include PC1 display fields such as `posture_errors`,
-`stability_score`, target tracking state, detected exercise type, and measurement
-quality. These fields are kept out of PC2 requests unless they are explicitly
-allowed by the PC2 payload contract.
+## 검증
 
-PC1 must keep uploading exercise frames while the session is running and keep
-using the `ws_url` returned from `POST /api/sessions/start` for realtime updates.
-Recommended frame upload cadence:
-
-- `squat`, `pushup`, `lunge`: every 300 ms.
-- `knee_raise`, `jumping_jack`: every 200 ms.
-
-Recommended exercise frame resolution:
-
-- Preferred: `1280x720` JPEG frames.
-- Minimum practical fallback: `960x540`.
-- Avoid going above `1920x1080` during dual MediaPipe mode unless the PC3 CPU
-  budget has been checked.
-
-PC1 should not send overlapping frame uploads. If a previous
-`POST /api/analyze/exercise` request is still in flight, skip the next scheduled
-frame. The preferred implementation is an adaptive loop: upload a frame, wait for
-the response, then schedule the next upload after 150-300 ms depending on the
-selected exercise. A slower cadence, such as 1500 ms, can miss the down/up
-transition and prevent the exercise count from increasing.
-
-PC3 freezes count updates while `target_status` is `target_recovering` or
-`target_lost`, or while blocking posture errors such as `person_too_far`,
-`partial_body`, `low_confidence`, or `model_disagreement` are present.
-
-## PC2 APIs
-
-PC3 uses these PC2 endpoints:
-
-- `POST /api/routine/profile` before exercise, for routine planning.
-- `GET /api/routine/profile/{user_id}/day` for date-based routine lookup.
-- `POST /api/coach/generate` after exercise, for session result coaching.
-
-Post-exercise PC2 requests are `exercise/session_completed` only. Routine
-requests are sanitized profile-only requests. Raw images, baseline raw data,
-null values, and PC1 UI-only fields are not sent to PC2.
-
-## Test
-
-```bash
+```powershell
 uv run --with-requirements requirements.txt python -m pytest -q
+curl http://127.0.0.1:9000/health
+curl http://127.0.0.1:9000/api/users/profiles
 ```
 
-Optional smoke test after starting the server:
+PC3는 PC2 없이 루틴/코칭을 성공처럼 꾸미지 않습니다. PC2가 없거나 실패하면 루틴/코칭 생성은 502/503 계열로 실패하는 것이 정상입니다.
 
-```bash
-uv run --with-requirements requirements.txt python scripts/smoke_test.py --base-url http://127.0.0.1:9000
-```
+## 변경 이력
+
+이번 정리 흐름은 [CHANGELOG.md](CHANGELOG.md)에 정리했습니다.

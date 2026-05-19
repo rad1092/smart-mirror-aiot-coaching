@@ -30,10 +30,25 @@ class FakePoseAnalyzer:
         return feature.model_copy(update={"type": exercise_type or feature.type}), "테스트 피드백"
 
 
-def _start_session(client, mode: str, goal: str | None = None) -> str:
+class TestCoachClient:
+    async def generate(self, payload):
+        return _coaching_response("pc2 called", payload.features.exercise.type)
+
+
+def _start_session(
+    client,
+    mode: str,
+    goal: str | None = None,
+    routine_id: str | None = None,
+    routine_day_id: int | None = None,
+) -> str:
     payload = {"user_id": "default", "mode": mode}
     if goal is not None:
         payload["goal"] = goal
+    if routine_id is not None:
+        payload["routine_id"] = routine_id
+    if routine_day_id is not None:
+        payload["routine_day_id"] = routine_day_id
     response = client.post("/api/sessions/start", json=payload)
     assert response.status_code == 200
     return response.json()["session_id"]
@@ -62,17 +77,20 @@ def test_exercise_analyze_fallback_returns_update_without_500(client, image_byte
 
 
 def test_exercise_frame_update_has_no_coaching_but_stop_does(client, image_bytes):
-    session_id = _start_session(client, "exercise", "squat")
+    app.dependency_overrides[get_coach_client] = lambda: TestCoachClient()
+    try:
+        session_id = _start_session(client, "exercise", "squat")
+        frame_update = client.post(
+            "/api/analyze/exercise",
+            data={"session_id": session_id},
+            files=_file(image_bytes),
+        )
+        assert frame_update.status_code == 200
+        assert "coaching" not in frame_update.json()
+        stop = client.post(f"/api/sessions/{session_id}/stop")
+    finally:
+        app.dependency_overrides.pop(get_coach_client, None)
 
-    frame_update = client.post(
-        "/api/analyze/exercise",
-        data={"session_id": session_id},
-        files=_file(image_bytes),
-    )
-    assert frame_update.status_code == 200
-    assert "coaching" not in frame_update.json()
-
-    stop = client.post(f"/api/sessions/{session_id}/stop")
     assert stop.status_code == 200
     body = stop.json()
     assert body["coaching"] is not None
@@ -80,35 +98,40 @@ def test_exercise_frame_update_has_no_coaching_but_stop_does(client, image_bytes
 
 
 def test_exercise_websocket_gate_broadcasts_update_and_stop_returns_coaching(client, image_bytes):
-    session_response = client.post(
-        "/api/sessions/start",
-        json={"user_id": "default", "mode": "exercise", "goal": "squat"},
-    )
-    assert session_response.status_code == 200
-    session_body = session_response.json()
-    session_id = session_body["session_id"]
-    assert session_body["ws_url"].endswith(f"/ws/sessions/{session_id}")
-
-    with client.websocket_connect(f"/ws/sessions/{session_id}") as websocket:
-        frame_update = client.post(
-            "/api/analyze/exercise",
-            data={"session_id": session_id},
-            files=_file(image_bytes),
+    app.dependency_overrides[get_coach_client] = lambda: TestCoachClient()
+    try:
+        session_response = client.post(
+            "/api/sessions/start",
+            json={"user_id": "default", "mode": "exercise", "goal": "squat"},
         )
-        assert frame_update.status_code == 200
-        frame_body = frame_update.json()
-        assert "coaching" not in frame_body
+        assert session_response.status_code == 200
+        session_body = session_response.json()
+        session_id = session_body["session_id"]
+        assert session_body["ws_url"].endswith(f"/ws/sessions/{session_id}")
 
-        message = websocket.receive_json()
-        assert message["type"] == "exercise_update"
-        assert message["session_id"] == session_id
-        assert message["count"] == frame_body["exercise"]["count"]
-        assert message["state"] == frame_body["exercise"]["state"]
-        assert message["posture_errors"] == frame_body["exercise"]["posture_errors"]
-        assert message["stability_score"] == frame_body["exercise"]["stability_score"]
-        assert _has_no_mojibake(message["feedback"])
+        with client.websocket_connect(f"/ws/sessions/{session_id}") as websocket:
+            frame_update = client.post(
+                "/api/analyze/exercise",
+                data={"session_id": session_id},
+                files=_file(image_bytes),
+            )
+            assert frame_update.status_code == 200
+            frame_body = frame_update.json()
+            assert "coaching" not in frame_body
 
-    stop = client.post(f"/api/sessions/{session_id}/stop")
+            message = websocket.receive_json()
+            assert message["type"] == "exercise_update"
+            assert message["session_id"] == session_id
+            assert message["count"] == frame_body["exercise"]["count"]
+            assert message["state"] == frame_body["exercise"]["state"]
+            assert message["posture_errors"] == frame_body["exercise"]["posture_errors"]
+            assert message["stability_score"] == frame_body["exercise"]["stability_score"]
+            assert _has_no_mojibake(message["feedback"])
+
+        stop = client.post(f"/api/sessions/{session_id}/stop")
+    finally:
+        app.dependency_overrides.pop(get_coach_client, None)
+
     assert stop.status_code == 200
     stop_body = stop.json()
     assert stop_body["coaching"] is not None
@@ -182,14 +205,17 @@ def test_exercise_websocket_includes_side_counts_for_paired_exercises(client, im
 
 
 def test_exercise_session_goal_sets_final_exercise_type(client):
-    session_response = client.post(
-        "/api/sessions/start",
-        json={"user_id": "default", "mode": "exercise", "goal": "pushup"},
-    )
-    assert session_response.status_code == 200
-    session_id = session_response.json()["session_id"]
-
-    stop = client.post(f"/api/sessions/{session_id}/stop")
+    app.dependency_overrides[get_coach_client] = lambda: TestCoachClient()
+    try:
+        session_response = client.post(
+            "/api/sessions/start",
+            json={"user_id": "default", "mode": "exercise", "goal": "pushup"},
+        )
+        assert session_response.status_code == 200
+        session_id = session_response.json()["session_id"]
+        stop = client.post(f"/api/sessions/{session_id}/stop")
+    finally:
+        app.dependency_overrides.pop(get_coach_client, None)
 
     assert stop.status_code == 200
     body = stop.json()
@@ -199,6 +225,7 @@ def test_exercise_session_goal_sets_final_exercise_type(client):
 
 def test_session_stop_calls_pc2_when_measurement_quality_is_good(client, image_bytes):
     calls: dict[str, int] = {"generate": 0}
+    captured: dict = {}
 
     class GoodPoseAnalyzer(FakePoseAnalyzer):
         def __init__(self) -> None:
@@ -217,15 +244,19 @@ def test_session_stop_calls_pc2_when_measurement_quality_is_good(client, image_b
     class DummyCoachClient:
         async def generate(self, payload):
             calls["generate"] += 1
+            captured["payload"] = payload
             return _coaching_response("pc2 called", payload.features.exercise.type)
-
-        def measurement_quality_response(self, payload, quality):
-            raise AssertionError("measurement fallback should not be used")
 
     app.dependency_overrides[get_pose_analyzer] = lambda: GoodPoseAnalyzer()
     app.dependency_overrides[get_coach_client] = lambda: DummyCoachClient()
     try:
-        session_id = _start_session(client, "exercise", "squat")
+        session_id = _start_session(
+            client,
+            "exercise",
+            "squat",
+            routine_id="routine_abc",
+            routine_day_id=22,
+        )
         frame = client.post(
             "/api/analyze/exercise",
             data={"session_id": session_id},
@@ -239,11 +270,15 @@ def test_session_stop_calls_pc2_when_measurement_quality_is_good(client, image_b
 
     assert stop.status_code == 200
     assert calls["generate"] == 1
+    assert captured["payload"].routine_id == "routine_abc"
+    assert captured["payload"].routine_day_id == 22
     assert stop.json()["features"]["exercise"]["measurement_quality"] == "pc2_ready"
     assert stop.json()["coaching"]["summary"] == "pc2 called"
 
 
-def test_session_stop_skips_pc2_when_measurement_quality_is_bad(client, image_bytes):
+def test_session_stop_calls_pc2_when_measurement_quality_is_bad(client, image_bytes):
+    calls: dict[str, int] = {"generate": 0}
+
     class BadPoseAnalyzer(FakePoseAnalyzer):
         def __init__(self) -> None:
             super().__init__(
@@ -260,10 +295,8 @@ def test_session_stop_skips_pc2_when_measurement_quality_is_bad(client, image_by
 
     class DummyCoachClient:
         async def generate(self, payload):
-            raise AssertionError("PC2 should be skipped for bad measurements")
-
-        def measurement_quality_response(self, payload, quality):
-            return _coaching_response("measurement fallback", payload.features.exercise.type)
+            calls["generate"] += 1
+            return _coaching_response("pc2 called despite low quality", payload.features.exercise.type)
 
     app.dependency_overrides[get_pose_analyzer] = lambda: BadPoseAnalyzer()
     app.dependency_overrides[get_coach_client] = lambda: DummyCoachClient()
@@ -282,9 +315,9 @@ def test_session_stop_skips_pc2_when_measurement_quality_is_bad(client, image_by
 
     assert stop.status_code == 200
     body = stop.json()
+    assert calls["generate"] == 1
     assert body["features"]["exercise"]["measurement_quality"] == "low_quality"
-    assert body["coaching"]["summary"] == "measurement fallback"
-
+    assert body["coaching"]["summary"] == "pc2 called despite low quality"
 
 def test_removed_non_exercise_modes_are_not_available(client, image_bytes):
     start_response = client.post(

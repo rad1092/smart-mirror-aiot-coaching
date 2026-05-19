@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import date
 
 import httpx
 
@@ -15,6 +16,8 @@ def _exercise_payload() -> FeaturePayload:
     return FeaturePayload(
         user_id="default",
         session_id="sess_test",
+        routine_id="routine_test",
+        routine_day_id=7,
         mode="exercise",
         event="session_completed",
         features=FeatureSet(
@@ -55,22 +58,13 @@ def _exercise_payload() -> FeaturePayload:
     )
 
 
-def test_coach_client_mock_response_satisfies_schema():
-    client = CoachClient(Settings(mock_llm=True))
-
-    response = asyncio.run(client.generate(_exercise_payload()))
-
-    assert isinstance(response, CoachingResponse)
-    assert response.summary
-    assert response.mirror_message
-    assert response.exercise_plan[0].exercise == "pushup"
-
-
 def test_pc2_request_json_contains_only_exercise_contract_fields():
-    client = CoachClient(Settings(mock_llm=False))
+    client = CoachClient(Settings(_env_file=None))
 
     request_json = client.build_pc2_request_json(_exercise_payload())
 
+    assert request_json["routine_id"] == "routine_test"
+    assert request_json["routine_day_id"] == 7
     assert request_json["mode"] == "exercise"
     assert request_json["event"] == "session_completed"
     assert set(request_json["features"]) == {"exercise"}
@@ -88,8 +82,8 @@ def test_pc2_request_json_contains_only_exercise_contract_fields():
     assert "detected_type" not in exercise_json
     assert "exercise_confidence" not in exercise_json
     assert "goal_mismatch" not in exercise_json
-    assert "measurement_quality" not in exercise_json
-    assert "measurement_confidence" not in exercise_json
+    assert exercise_json["measurement_quality"] == "dual_verified"
+    assert exercise_json["measurement_confidence"] == 0.82
     assert "target_signature" not in exercise_json
     assert "classifier_window" not in exercise_json
     assert set(request_json["baseline_diff"]) == {"exercise"}
@@ -148,7 +142,7 @@ def test_pc2_response_fields_are_preserved(monkeypatch):
     monkeypatch.setattr(httpx, "AsyncClient", DummyAsyncClient)
     client = CoachClient(
         Settings(
-            mock_llm=False,
+            _env_file=None,
             pc2_coach_api_url="http://pc2.local:7000/api/coach/generate",
         )
     )
@@ -160,6 +154,67 @@ def test_pc2_response_fields_are_preserved(monkeypatch):
     assert response.exercise_plan[0].exercise == "pushup"
     assert response.pc2_payload is not None
     assert response.pc2_payload.display_lines == ["slow tempo", "stable posture"]
+
+
+def test_pc2_proxy_methods_call_configured_urls(monkeypatch):
+    captured: list[dict] = []
+
+    class DummyAsyncClient:
+        def __init__(self, timeout: float) -> None:
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def get(self, url: str, params: dict | None = None):
+            captured.append({"method": "GET", "url": url, "params": params})
+            return httpx.Response(200, json={"ok": True}, request=httpx.Request("GET", url))
+
+        async def post(self, url: str, json: dict):
+            captured.append({"method": "POST", "url": url, "json": json})
+            return httpx.Response(200, json={"ok": True}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "AsyncClient", DummyAsyncClient)
+    client = CoachClient(
+        Settings(
+            _env_file=None,
+            pc2_routine_calendar_api_url="http://pc2.local:7000/api/routine/profile/{user_id}/calendar",
+            pc2_body_metrics_api_url="http://pc2.local:7000/api/users/{user_id}/body-metrics",
+            pc2_progress_api_url="http://pc2.local:7000/api/users/{user_id}/progress",
+            pc2_coach_logs_api_url="http://pc2.local:7000/api/coach/logs/{user_id}",
+        )
+    )
+
+    asyncio.run(client.get_routine_calendar("user A", date(2026, 5, 19), date(2026, 5, 25)))
+    asyncio.run(client.save_body_metric("user A", {"weight_kg": 72.5}))
+    asyncio.run(client.get_user_progress("user A", 30))
+    asyncio.run(client.get_coach_logs("user A", 10))
+
+    assert captured == [
+        {
+            "method": "GET",
+            "url": "http://pc2.local:7000/api/routine/profile/user%20A/calendar",
+            "params": {"from_date": "2026-05-19", "to_date": "2026-05-25"},
+        },
+        {
+            "method": "POST",
+            "url": "http://pc2.local:7000/api/users/user%20A/body-metrics",
+            "json": {"weight_kg": 72.5},
+        },
+        {
+            "method": "GET",
+            "url": "http://pc2.local:7000/api/users/user%20A/progress",
+            "params": {"days": 30},
+        },
+        {
+            "method": "GET",
+            "url": "http://pc2.local:7000/api/coach/logs/user%20A",
+            "params": {"limit": 10},
+        },
+    ]
 
 
 def _contains_none(value) -> bool:

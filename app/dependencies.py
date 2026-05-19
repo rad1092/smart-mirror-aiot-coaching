@@ -6,13 +6,14 @@ from app.config import get_settings
 from app.features.feature_builder import FeatureBuilder
 from app.llm_client.coach_client import CoachClient
 from app.sensors.sensor_service import SensorService
+from app.storage.app_store import AppStore
 from app.storage.memory_store import MemoryStore
-from app.triggers.trigger_engine import TriggerEngine
 from app.vision.pose_analyzer import PoseAnalyzer
 
 
 settings = get_settings()
 store = MemoryStore()
+app_store = AppStore(settings.resolve_path(settings.app_db_path))
 sensor_service = SensorService(store)
 baseline_service = BaselineService(
     BaselineStore(
@@ -20,7 +21,6 @@ baseline_service = BaselineService(
         settings.resolve_path(settings.baseline_db_path),
     )
 )
-trigger_engine = TriggerEngine()
 coach_client = CoachClient(settings)
 feature_builder = FeatureBuilder(sensor_service, baseline_service)
 pose_analyzer = PoseAnalyzer(
@@ -40,16 +40,16 @@ def get_store() -> MemoryStore:
     return store
 
 
+def get_app_store() -> AppStore:
+    return app_store
+
+
 def get_sensor_service() -> SensorService:
     return sensor_service
 
 
 def get_baseline_service() -> BaselineService:
     return baseline_service
-
-
-def get_trigger_engine() -> TriggerEngine:
-    return trigger_engine
 
 
 def get_coach_client() -> CoachClient:

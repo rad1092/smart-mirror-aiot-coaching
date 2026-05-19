@@ -150,7 +150,6 @@ def test_profile_routine_calls_pc2_with_sanitized_payload_and_preserves_schedule
     app.dependency_overrides[get_coach_client] = lambda: CoachClient(
         Settings(
             _env_file=None,
-            mock_llm=False,
             pc2_routine_api_url="http://pc2.local:7000/api/routine/profile",
         )
     )
@@ -161,17 +160,19 @@ def test_profile_routine_calls_pc2_with_sanitized_payload_and_preserves_schedule
 
     assert response.status_code == 200
     assert captured["url"] == "http://pc2.local:7000/api/routine/profile"
-    assert captured["json"] == {
+    expected_payload = {
         "user_id": "routine_user",
-        "user_goal": "하체 강화",
-        "exercise_experience": "초보",
+        "user_goal": "lower_body_strength",
+        "exercise_experience": "beginner",
         "available_days_per_week": 4,
-        "restricted_body_parts": ["무릎"],
+        "restricted_body_parts": ["knee"],
         "purpose": "pre_exercise_routine",
         "profile_name": "Mirror User",
         "weight_kg": 70.0,
         "start_date": "2026-05-13",
     }
+    assert {key: captured["json"].get(key) for key in expected_payload} == expected_payload
+    assert "user_history" in captured["json"]
     body = response.json()
     assert body["source"] == "ai"
     assert body["difficulty"] == "easy"
@@ -207,14 +208,14 @@ def test_profile_routine_flat_payload_is_normalized_for_pc2(client, monkeypatch)
             return httpx.Response(200, json=_pc2_routine_response(), request=httpx.Request("POST", url))
 
     monkeypatch.setattr(httpx, "AsyncClient", DummyAsyncClient)
-    app.dependency_overrides[get_coach_client] = lambda: CoachClient(Settings(_env_file=None, mock_llm=False))
+    app.dependency_overrides[get_coach_client] = lambda: CoachClient(Settings(_env_file=None))
     try:
         response = client.post("/api/routines/profile", json=_flat_routine_request())
     finally:
         app.dependency_overrides.pop(get_coach_client, None)
 
     assert response.status_code == 200
-    assert captured["json"] == {
+    expected_payload = {
         "user_id": "routine_user",
         "user_goal": "운동 습관 만들기",
         "exercise_experience": "꾸준한 운동",
@@ -225,6 +226,8 @@ def test_profile_routine_flat_payload_is_normalized_for_pc2(client, monkeypatch)
         "weight_kg": 65.0,
         "start_date": "2026-05-14",
     }
+    assert {key: captured["json"].get(key) for key in expected_payload} == expected_payload
+    assert "user_history" in captured["json"]
     assert response.json()["difficulty"] == "challenge"
 
 
@@ -247,7 +250,7 @@ def test_profile_routine_omits_start_date_when_not_provided(client, monkeypatch)
             return httpx.Response(200, json=_pc2_routine_response(), request=httpx.Request("POST", url))
 
     monkeypatch.setattr(httpx, "AsyncClient", DummyAsyncClient)
-    app.dependency_overrides[get_coach_client] = lambda: CoachClient(Settings(_env_file=None, mock_llm=False))
+    app.dependency_overrides[get_coach_client] = lambda: CoachClient(Settings(_env_file=None))
     try:
         response = client.post("/api/routines/profile", json=_routine_request(include_start_date=False))
     finally:
@@ -287,7 +290,7 @@ def test_profile_routine_rejects_invalid_limitation(client):
     assert response.status_code == 422
 
 
-def test_profile_routine_returns_pc1_renderable_fallback_when_pc2_fails(client, monkeypatch):
+def test_profile_routine_returns_503_when_pc2_fails(client, monkeypatch):
     _save_complete_baseline(client)
 
     class FailingAsyncClient:
@@ -305,26 +308,18 @@ def test_profile_routine_returns_pc1_renderable_fallback_when_pc2_fails(client, 
 
     monkeypatch.setattr(httpx, "AsyncClient", FailingAsyncClient)
     app.dependency_overrides[get_coach_client] = lambda: CoachClient(
-        Settings(_env_file=None, mock_llm=False)
+        Settings(_env_file=None)
     )
     try:
         response = client.post("/api/routines/profile", json=_routine_request())
     finally:
         app.dependency_overrides.pop(get_coach_client, None)
 
-    assert response.status_code == 200
-    body = response.json()
-    assert body["source"] == "basic"
-    assert body["items"]
-    assert body["routine_id"] is None
-    assert body["scheduled_dates"] == []
-    assert body["weekly_routine"] == []
-    assert body["start_exercise_type"] == body["items"][0]["exercise_type"]
-    assert "PC2 응답을 받지 못해" in body["reason_lines"][0]
+    assert response.status_code == 503
+    assert response.json()["detail"]["reason"] == "pc2_routine_unavailable"
 
-
-def test_profile_routine_day_proxies_pc2_day_endpoint(client, monkeypatch):
-    captured: dict = {}
+def _generate_stored_routine(client, monkeypatch, user_id: str = "routine_store_user") -> dict:
+    _save_complete_baseline(client, user_id=user_id)
 
     class DummyAsyncClient:
         def __init__(self, timeout: float) -> None:
@@ -336,104 +331,86 @@ def test_profile_routine_day_proxies_pc2_day_endpoint(client, monkeypatch):
         async def __aexit__(self, exc_type, exc, tb) -> None:
             return None
 
-        async def get(self, url: str, params: dict | None = None):
-            captured["url"] = url
-            captured["params"] = params
-            return httpx.Response(
-                200,
-                json={
-                    "routine_id": "routine_abc",
-                    "user_id": "routine_user",
-                    "scheduled_date": "2026-05-14",
-                    "day_index": 2,
-                    "day_label": "Day 2",
-                    "focus": "Upper body",
-                    "exercises": [
-                        {
-                            "exercise": "push-up",
-                            "sets": 3,
-                            "reps": 8,
-                            "rest_sec": 60,
-                            "focus": "body line",
-                            "reason": "Build upper support.",
-                            "how_to": "Lower and press while keeping one straight body line.",
-                            "tips": "Brace the core.",
-                        }
-                    ],
-                    "summary": "Weekly routine",
-                    "weekly_focus": "Consistency",
-                    "message": "Today is pushup day.",
-                },
-                request=httpx.Request("GET", url),
-            )
+        async def post(self, url: str, json: dict):
+            response_json = _pc2_routine_response()
+            response_json["pc3_payload"]["routine_id"] = f"routine_{user_id}"
+            return httpx.Response(200, json=response_json, request=httpx.Request("POST", url))
 
     monkeypatch.setattr(httpx, "AsyncClient", DummyAsyncClient)
-    app.dependency_overrides[get_coach_client] = lambda: CoachClient(
-        Settings(
-            _env_file=None,
-            pc2_routine_day_api_url="http://pc2.local:7000/api/routine/profile/{user_id}/day",
-        )
-    )
-    try:
-        response = client.get("/api/routines/profile/routine_user/day?target_date=2026-05-14")
-    finally:
-        app.dependency_overrides.pop(get_coach_client, None)
-
-    assert response.status_code == 200
-    assert captured["url"] == "http://pc2.local:7000/api/routine/profile/routine_user/day"
-    assert captured["params"] == {"target_date": "2026-05-14"}
-    body = response.json()
-    assert body["routine_id"] == "routine_abc"
-    assert body["exercises"][0]["exercise"] == "pushup"
-    assert body["exercises"][0]["how_to"].startswith("Lower and press")
-    assert body["message"] == "Today is pushup day."
-
-
-def test_profile_routine_day_preserves_pc2_404(client, monkeypatch):
-    class MissingAsyncClient:
-        def __init__(self, timeout: float) -> None:
-            self.timeout = timeout
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb) -> None:
-            return None
-
-        async def get(self, url: str, params: dict | None = None):
-            return httpx.Response(404, json={"detail": "not found"}, request=httpx.Request("GET", url))
-
-    monkeypatch.setattr(httpx, "AsyncClient", MissingAsyncClient)
     app.dependency_overrides[get_coach_client] = lambda: CoachClient(Settings(_env_file=None))
     try:
-        response = client.get("/api/routines/profile/routine_user/day?target_date=2026-05-14")
+        response = client.post("/api/routines/profile", json=_routine_request(user_id=user_id))
     finally:
         app.dependency_overrides.pop(get_coach_client, None)
+    assert response.status_code == 200
+    return response.json()
+
+
+def test_profile_routine_day_reads_pc3_app_store(client, monkeypatch):
+    user_id = "routine_day_store_user"
+    generated = _generate_stored_routine(client, monkeypatch, user_id=user_id)
+
+    response = client.get(f"/api/routines/profile/{user_id}/day?target_date=2026-05-14")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["routine_id"] == generated["routine_id"]
+    assert body["user_id"] == user_id
+    assert body["scheduled_date"] == "2026-05-14"
+    assert body["day_index"] == 2
+    assert body["exercises"][0]["exercise"] == "pushup"
+
+
+def test_profile_routine_day_returns_404_when_pc3_has_no_day(client):
+    response = client.get("/api/routines/profile/missing_store_user/day?target_date=2026-05-14")
 
     assert response.status_code == 404
     assert response.json()["detail"]["reason"] == "routine_day_not_found"
 
 
-def test_profile_routine_day_returns_503_when_pc2_unavailable(client, monkeypatch):
-    class FailingAsyncClient:
-        def __init__(self, timeout: float) -> None:
-            self.timeout = timeout
+def test_profile_routine_calendar_reads_pc3_app_store(client, monkeypatch):
+    user_id = "routine_calendar_store_user"
+    generated = _generate_stored_routine(client, monkeypatch, user_id=user_id)
 
-        async def __aenter__(self):
-            return self
+    response = client.get(
+        f"/api/routines/profile/{user_id}/calendar?from_date=2026-05-13&to_date=2026-05-15"
+    )
 
-        async def __aexit__(self, exc_type, exc, tb) -> None:
-            return None
+    assert response.status_code == 200
+    body = response.json()
+    assert body["user_id"] == user_id
+    assert len(body["days"]) == 3
+    assert body["days"][0]["routine_id"] == generated["routine_id"]
+    assert body["days"][1]["routine_id"] == generated["routine_id"]
+    assert body["days"][2]["routine_id"] is None
 
-        async def get(self, url: str, params: dict | None = None):
-            raise httpx.ConnectError("pc2 down", request=httpx.Request("GET", url))
 
-    monkeypatch.setattr(httpx, "AsyncClient", FailingAsyncClient)
-    app.dependency_overrides[get_coach_client] = lambda: CoachClient(Settings(_env_file=None))
-    try:
-        response = client.get("/api/routines/profile/routine_user/day?target_date=2026-05-14")
-    finally:
-        app.dependency_overrides.pop(get_coach_client, None)
+def test_profile_routine_calendar_empty_range_still_returns_pc3_days(client):
+    response = client.get(
+        "/api/routines/profile/missing_calendar_user/calendar?from_date=2026-05-19&to_date=2026-05-21"
+    )
 
-    assert response.status_code == 503
-    assert response.json()["detail"]["reason"] == "pc2_routine_day_unavailable"
+    assert response.status_code == 200
+    body = response.json()
+    assert body["user_id"] == "missing_calendar_user"
+    assert [day["date"] for day in body["days"]] == ["2026-05-19", "2026-05-20", "2026-05-21"]
+    assert all(day["routine_id"] is None for day in body["days"])
+
+
+def test_user_data_routes_use_pc3_app_store(client):
+    user_id = "pc3_store_user"
+
+    metric = client.post(
+        f"/api/users/{user_id}/body-metrics",
+        json={"measured_date": "2026-05-19", "weight_kg": 72.5},
+    )
+    progress = client.get(f"/api/users/{user_id}/progress?days=14")
+    logs = client.get(f"/api/coach/logs/{user_id}?limit=5")
+
+    assert metric.status_code == 200
+    assert progress.status_code == 200
+    assert logs.status_code == 200
+    assert metric.json()["user_id"] == user_id
+    assert progress.json()["user_id"] == user_id
+    assert progress.json()["body_metrics"][-1]["weight_kg"] == 72.5
+    assert logs.json()["user_id"] == user_id

@@ -19,6 +19,9 @@ class BaselineService:
     def upsert_baseline(self, user_id: str, baseline_updates: dict[str, Any]) -> dict[str, Any]:
         return self._baseline_store.upsert_baseline(user_id, baseline_updates)
 
+    def delete_baseline(self, user_id: str) -> None:
+        self._baseline_store.delete_baseline(user_id)
+
     def calculate_exercise_diff(
         self, user_id: str, exercise: ExerciseFeature
     ) -> dict[str, float | int]:

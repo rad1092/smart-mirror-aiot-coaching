@@ -103,7 +103,7 @@ def main() -> int:
         print("[WARN] USE_MEDIAPIPE_TASKS=true but pose model is missing.")
     if use_tasks and settings["POSE_PIPELINE_MODE"] == "dual" and not (fast_ok and accurate_ok):
         print("[WARN] POSE_PIPELINE_MODE=dual but fast or accurate pose model is missing.")
-    print("[INFO] fallback/mock mode remains available")
+    print("[INFO] PC3 model path check complete")
     return 0
 
 

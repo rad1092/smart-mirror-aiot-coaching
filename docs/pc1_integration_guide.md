@@ -169,8 +169,8 @@ PC3 response shape is PC1 `RecommendationResponsePayload`:
 }
 ```
 
-If PC2 fails, PC3 returns `source="basic"` with a local fallback routine that PC1
-can still render and start.
+If PC2 is unavailable, PC3 returns `503`. If PC2 returns an invalid routine
+response, PC3 returns `502`. PC3 does not create local fallback routines.
 
 ## 3. Date-Based Routine Lookup
 
@@ -225,7 +225,9 @@ Request:
 {
   "user_id": "profile_1",
   "mode": "exercise",
-  "goal": "pushup"
+  "goal": "pushup",
+  "routine_id": "routine_abcd1234",
+  "routine_day_id": 12
 }
 ```
 
@@ -346,9 +348,9 @@ Example WebSocket update:
 POST /api/sessions/{session_id}/stop
 ```
 
-At stop time, PC3 finalizes the exercise feature. If measurement quality is good
-and `MOCK_LLM=false`, PC3 calls PC2 `/api/coach/generate`. If quality is too low,
-PC3 skips PC2 and returns local guidance asking the user to retake the set.
+At stop time, PC3 finalizes the exercise feature and calls PC2
+`/api/coach/generate`. Measurement quality is sent to PC2 as context; PC3 does
+not replace PC2 with local guidance.
 
 Important response fields:
 

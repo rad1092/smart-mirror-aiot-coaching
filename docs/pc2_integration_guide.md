@@ -10,20 +10,28 @@ PC3 uses these PC2 endpoints:
 ```text
 POST /api/routine/profile
 GET  /api/routine/profile/{user_id}/day?target_date=YYYY-MM-DD
+GET  /api/routine/profile/{user_id}/calendar?from_date=YYYY-MM-DD&to_date=YYYY-MM-DD
+POST /api/users/{user_id}/body-metrics
+GET  /api/users/{user_id}/progress?days=30
 POST /api/coach/generate
+GET  /api/coach/logs/{user_id}?limit=10
 ```
 
 PC3 settings:
 
 ```env
-MOCK_LLM=false
 PC2_ROUTINE_API_URL=http://<PC2_HOST>:7000/api/routine/profile
 PC2_ROUTINE_DAY_API_URL=http://<PC2_HOST>:7000/api/routine/profile/{user_id}/day
+PC2_ROUTINE_CALENDAR_API_URL=http://<PC2_HOST>:7000/api/routine/profile/{user_id}/calendar
+PC2_BODY_METRICS_API_URL=http://<PC2_HOST>:7000/api/users/{user_id}/body-metrics
+PC2_PROGRESS_API_URL=http://<PC2_HOST>:7000/api/users/{user_id}/progress
 PC2_COACH_API_URL=http://<PC2_HOST>:7000/api/coach/generate
+PC2_COACH_LOGS_API_URL=http://<PC2_HOST>:7000/api/coach/logs/{user_id}
 ```
 
-If PC2 is unavailable, PC3 returns a local fallback response instead of failing
-the PC1 flow.
+If PC2 is unavailable, PC3 returns `503`. If PC2 returns an invalid response,
+PC3 returns `502`. PC3 does not create local routine or coaching fallback
+responses.
 
 ## Pre-Exercise Routine Request
 
@@ -150,6 +158,8 @@ Request:
 {
   "user_id": "profile_1",
   "session_id": "sess_abc",
+  "routine_id": "routine_abcd1234",
+  "routine_day_id": 12,
   "mode": "exercise",
   "event": "session_completed",
   "features": {
@@ -158,7 +168,10 @@ Request:
       "count": 5,
       "state": "up",
       "stability_score": 0.72,
-      "posture_errors": []
+      "posture_errors": [],
+      "duration_sec": 180,
+      "measurement_quality": "pc2_ready",
+      "measurement_confidence": 0.86
     }
   },
   "baseline_diff": {
@@ -184,8 +197,8 @@ Supported exercise types:
 - `pushup`
 
 PC3 strips fields that PC2 does not allow, including target tracking,
-classifier, measurement quality, image, video, full landmarks, segmentation, and
-null fields.
+classifier, side counters, image, video, full landmarks, segmentation, UI-only
+state, and null fields.
 
 ## Post-Exercise Coaching Response
 

@@ -151,8 +151,8 @@ Do not give medical diagnosis or treatment advice.
 Return only valid JSON for the expected response schema.
 ```
 
-## Fallback Rules
+## Failure Rules
 
-If an LLM call fails or returns plain text, PC2 should wrap the fallback into the
-expected JSON response shape. PC3 also has local fallback responses when PC2 is
-unavailable.
+If an LLM call fails or returns plain text, PC2 should fail clearly or normalize
+the response before returning it. PC3 does not create local fallback routine or
+coaching responses when PC2 is unavailable.

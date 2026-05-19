@@ -16,6 +16,10 @@ def default_baseline_db_path() -> Path:
     return Path(__file__).resolve().parent.parent / "data" / "baselines.sqlite3"
 
 
+def default_app_db_path() -> Path:
+    return Path(__file__).resolve().parent.parent / "data" / "app.sqlite3"
+
+
 def project_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
@@ -48,7 +52,11 @@ class Settings(BaseSettings):
     pc2_coach_api_url: str = "http://localhost:7000/api/coach/generate"
     pc2_routine_api_url: str = "http://localhost:7000/api/routine/profile"
     pc2_routine_day_api_url: str = "http://localhost:7000/api/routine/profile/{user_id}/day"
-    mock_llm: bool = True
+    pc2_routine_calendar_api_url: str = "http://localhost:7000/api/routine/profile/{user_id}/calendar"
+    pc2_body_metrics_api_url: str = "http://localhost:7000/api/users/{user_id}/body-metrics"
+    pc2_progress_api_url: str = "http://localhost:7000/api/users/{user_id}/progress"
+    pc2_coach_logs_api_url: str = "http://localhost:7000/api/coach/logs/{user_id}"
+    pc2_workout_skip_api_url: str = "http://localhost:7000/api/workouts/skip"
     host: str = "127.0.0.1"
     port: int = 9000
     ws_public_host: str | None = None
@@ -74,6 +82,7 @@ class Settings(BaseSettings):
     exercise_classifier_path: Path = Field(default_factory=default_exercise_classifier_path)
     baseline_path: Path = Field(default_factory=default_baseline_path)
     baseline_db_path: Path = Field(default_factory=default_baseline_db_path)
+    app_db_path: Path = Field(default_factory=default_app_db_path)
 
     model_config = SettingsConfigDict(
         env_file=".env",

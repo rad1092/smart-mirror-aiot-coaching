@@ -56,4 +56,4 @@ def test_check_model_paths_script_succeeds_without_models():
     )
 
     assert result.returncode == 0
-    assert "fallback/mock mode" in result.stdout
+    assert "PC3 model path check complete" in result.stdout
