@@ -1,0 +1,21 @@
+[project]
+name = "pc3-vision-gateway"
+version = "0.1.0"
+description = "Exercise-only vision and sensor gateway for smart mirror AIoT coaching."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic",
+    "pydantic-settings",
+    "python-multipart",
+    "httpx",
+    "numpy",
+    "opencv-python",
+    "mediapipe",
+    "pytest",
+]
+
+[tool.uv]
+package = false
